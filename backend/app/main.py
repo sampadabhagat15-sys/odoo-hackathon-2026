@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.core.database import Base, engine
 from app import models  # noqa: F401 — registers all models on Base.metadata
-from app.routers import auth, vehicles, drivers
+from app.routers import auth, vehicles, drivers, trips
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -63,6 +63,9 @@ app.include_router(
 )
 app.include_router(
     drivers.router, prefix=f"{settings.API_V1_PREFIX}/drivers", tags=["Drivers"]
+)
+app.include_router(
+    trips.router, prefix=f"{settings.API_V1_PREFIX}/trips", tags=["Trips"]
 )
 
 

@@ -9,7 +9,7 @@ alongside `TransitOps/frontend/` (Avika's React app).
 
 - [x] **Module 1** — Project scaffold, DB models (all 7 entities), Auth + RBAC
 - [x] **Module 2** — Vehicle + Driver CRUD
-- [ ] Module 3 — Trip Management (create, dispatch, complete, cancel + business rules)
+- [x] **Module 3** — Trip Management (create, dispatch, complete, cancel + business rules)
 - [ ] Module 4 — Maintenance + Fuel & Expense tracking
 - [ ] Module 5 — Dashboard KPIs + Reports/Analytics + CSV export
 
@@ -139,3 +139,33 @@ update endpoint — it's controlled by dedicated workflows (trip
 dispatch/complete/cancel in Module 3, suspend/reactivate here) so state
 transitions stay consistent with the spec's business rules instead of
 being freely overwritable.
+
+## Module 3 — Trip Management (tested end-to-end against Postgres)
+
+`dispatcher`/`fleet_manager`/`admin` for all writes; GET endpoints open.
+
+- `POST /api/v1/trips` — create (status: Draft). Validates vehicle is
+  Available (not Retired/In Shop/On Trip), driver is Available (not
+  Suspended/On Trip) and license not expired, and cargo_weight ≤
+  vehicle's max_load_capacity. Vehicle/driver status is NOT changed yet.
+- `GET /api/v1/trips?status_filter=&vehicle_id=&driver_id=` — list with filters
+- `GET /api/v1/trips/{id}` — get one
+- `POST /api/v1/trips/{id}/dispatch` — Draft → Dispatched. Re-validates
+  vehicle/driver (in case something changed since Draft), then sets
+  both to On Trip.
+- `POST /api/v1/trips/{id}/complete` — Dispatched → Completed. Body:
+  `{final_odometer, fuel_consumed}`. Computes `actual_distance` =
+  final_odometer − vehicle's odometer at completion time, updates the
+  vehicle's odometer, restores vehicle/driver to Available. Rejects a
+  final_odometer less than the vehicle's current odometer.
+- `POST /api/v1/trips/{id}/cancel` — Draft or Dispatched → Cancelled.
+  Only restores vehicle/driver to Available if the trip had actually
+  been dispatched (a cancelled Draft never touched their status).
+
+Verified: cargo-over-capacity rejected (400), expired-license driver
+rejected (400), double-booking an On-Trip vehicle/driver rejected
+(400), wrong-role writes rejected (403), re-dispatching an already-
+dispatched trip rejected (400), completing a non-dispatched trip
+rejected (400), odometer regression rejected (400) — and the full
+happy path (create → dispatch → complete) correctly updates the
+vehicle's odometer and both statuses at each step.
