@@ -19,6 +19,13 @@ export const TRIP_STATUS = {
   CANCELLED: "Cancelled",
 };
 
+export const MAINTENANCE_STATUS = {
+  SCHEDULED: "Scheduled",
+  IN_PROGRESS: "In Progress",
+  COMPLETED: "Completed",
+  OVERDUE: "Overdue",
+};
+
 // Maps a status string to the token pair used by <StatusBadge>.
 // tone keys correspond to --color-status-* variables in index.css.
 export const STATUS_TONE = {
@@ -32,4 +39,8 @@ export const STATUS_TONE = {
   [TRIP_STATUS.DISPATCHED]: "ontrip",
   [TRIP_STATUS.COMPLETED]: "available",
   [TRIP_STATUS.CANCELLED]: "danger",
+  [MAINTENANCE_STATUS.SCHEDULED]: "retired",
+  [MAINTENANCE_STATUS.IN_PROGRESS]: "ontrip",
+  [MAINTENANCE_STATUS.COMPLETED]: "available",
+  [MAINTENANCE_STATUS.OVERDUE]: "danger",
 };
