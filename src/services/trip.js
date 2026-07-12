@@ -1,18 +1,43 @@
+import api, { mockDelay } from "./api";
 import { TRIP_STATUS } from "../constants/status";
 
-// Simulates network latency so loading states are visible during development.
-const DELAY_MS = 400;
-function delay(value) {
-  return new Promise((resolve) => setTimeout(() => resolve(value), DELAY_MS));
+// Flip to true to fall back to mock data for offline/demo use.
+// Requires vehicles/drivers to already exist in the backend with status
+// Available so they show up as assignable.
+const USE_MOCKS = false;
+
+function fromBackend(t) {
+  return {
+    id: t.id,
+    origin: t.source,
+    destination: t.destination,
+    vehicleId: t.vehicle_id,
+    driverId: t.driver_id,
+    cargoWeightKg: t.cargo_weight,
+    distanceKm: t.planned_distance,
+    actualDistanceKm: t.actual_distance,
+    fuelConsumedLiters: t.fuel_consumed,
+    status: t.status,
+    dispatchedAt: t.dispatched_at,
+    completedAt: t.completed_at,
+    cancelledAt: t.cancelled_at,
+    createdAt: t.created_at,
+    updatedAt: t.updated_at,
+  };
+}
+
+function vehicleFromBackend(v) {
+  return { id: v.id, registrationNumber: v.registration_number, name: v.name };
+}
+
+function driverFromBackend(d) {
+  return { id: d.id, name: d.name, licenseNumber: d.license_number };
 }
 
 function generateTripCode(index) {
   return `TR-${String(1000 + index)}`;
 }
 
-// TODO: once the backend is ready, swap this for the real vehicle/driver
-// services (e.g. import { getVehicles } from "./vehicle"; import { getDrivers } from "./driver";).
-// Kept local here so Trips doesn't assume function names it hasn't confirmed yet.
 const ASSIGNABLE_VEHICLES = [
   { id: "v-1", registrationNumber: "DL-05C-1234", name: "Tata Ace" },
   { id: "v-2", registrationNumber: "MH-12AB-5566", name: "Ashok Leyland Dost" },
@@ -27,146 +52,105 @@ const ASSIGNABLE_DRIVERS = [
   { id: "d-4", name: "Fatima Sheikh", licenseNumber: "MH-0876-20200456" },
 ];
 
-function vehicleLabel(vehicleId) {
-  const v = ASSIGNABLE_VEHICLES.find((x) => x.id === vehicleId);
+function vehicleLabel(vehicleId, vehicles = ASSIGNABLE_VEHICLES) {
+  const v = vehicles.find((x) => x.id === vehicleId);
   return v ? `${v.name} · ${v.registrationNumber}` : "—";
 }
 
-function driverLabel(driverId) {
-  const d = ASSIGNABLE_DRIVERS.find((x) => x.id === driverId);
+function driverLabel(driverId, drivers = ASSIGNABLE_DRIVERS) {
+  const d = drivers.find((x) => x.id === driverId);
   return d ? d.name : "—";
 }
 
-let trips = [
-  {
-    id: "t-1",
-    tripCode: generateTripCode(1),
-    origin: "Delhi",
-    destination: "Jaipur",
-    region: "North",
-    vehicleId: "v-1",
-    driverId: "d-1",
-    cargoType: "General",
-    cargoWeightKg: 620,
-    distanceKm: 280,
-    departureDate: "2026-07-10",
-    expectedArrival: "2026-07-11",
-    status: TRIP_STATUS.DISPATCHED,
-  },
-  {
-    id: "t-2",
-    tripCode: generateTripCode(2),
-    origin: "Mumbai",
-    destination: "Pune",
-    region: "West",
-    vehicleId: "v-2",
-    driverId: "d-4",
-    cargoType: "Perishable",
-    cargoWeightKg: 340,
-    distanceKm: 150,
-    departureDate: "2026-07-09",
-    expectedArrival: "2026-07-09",
-    status: TRIP_STATUS.COMPLETED,
-  },
-  {
-    id: "t-3",
-    tripCode: generateTripCode(3),
-    origin: "Bengaluru",
-    destination: "Chennai",
-    region: "South",
-    vehicleId: "v-3",
-    driverId: "d-2",
-    cargoType: "Fragile",
-    cargoWeightKg: 210,
-    distanceKm: 345,
-    departureDate: "2026-07-13",
-    expectedArrival: "2026-07-14",
-    status: TRIP_STATUS.DRAFT,
-  },
-  {
-    id: "t-4",
-    tripCode: generateTripCode(4),
-    origin: "Jaipur",
-    destination: "Ahmedabad",
-    region: "West",
-    vehicleId: "v-4",
-    driverId: "d-3",
-    cargoType: "Bulk",
-    cargoWeightKg: 1450,
-    distanceKm: 660,
-    departureDate: "2026-07-08",
-    expectedArrival: "2026-07-09",
-    status: TRIP_STATUS.CANCELLED,
-  },
-  {
-    id: "t-5",
-    tripCode: generateTripCode(5),
-    origin: "Kolkata",
-    destination: "Bhubaneswar",
-    region: "East",
-    vehicleId: "v-1",
-    driverId: "d-1",
-    cargoType: "Refrigerated",
-    cargoWeightKg: 890,
-    distanceKm: 440,
-    departureDate: "2026-07-14",
-    expectedArrival: "2026-07-15",
-    status: TRIP_STATUS.DISPATCHED,
-  },
-  {
-    id: "t-6",
-    tripCode: generateTripCode(6),
-    origin: "Hyderabad",
-    destination: "Vijayawada",
-    region: "South",
-    vehicleId: "v-3",
-    driverId: "d-2",
-    cargoType: "General",
-    cargoWeightKg: 510,
-    distanceKm: 275,
-    departureDate: "2026-07-06",
-    expectedArrival: "2026-07-07",
-    status: TRIP_STATUS.COMPLETED,
-  },
+let mockTrips = [
+  { id: "t-1", tripCode: generateTripCode(1), origin: "Delhi", destination: "Jaipur", vehicleId: "v-1", driverId: "d-1", cargoWeightKg: 620, distanceKm: 280, status: TRIP_STATUS.DISPATCHED },
+  { id: "t-2", tripCode: generateTripCode(2), origin: "Mumbai", destination: "Pune", vehicleId: "v-2", driverId: "d-4", cargoWeightKg: 340, distanceKm: 150, status: TRIP_STATUS.COMPLETED },
+  { id: "t-3", tripCode: generateTripCode(3), origin: "Bengaluru", destination: "Chennai", vehicleId: "v-3", driverId: "d-2", cargoWeightKg: 210, distanceKm: 345, status: TRIP_STATUS.DRAFT },
+  { id: "t-4", tripCode: generateTripCode(4), origin: "Jaipur", destination: "Ahmedabad", vehicleId: "v-4", driverId: "d-3", cargoWeightKg: 1450, distanceKm: 660, status: TRIP_STATUS.CANCELLED },
 ];
 
-function withLabels(trip) {
-  return {
-    ...trip,
-    vehicleLabel: vehicleLabel(trip.vehicleId),
-    driverLabel: driverLabel(trip.driverId),
-  };
+function withMockLabels(trip) {
+  return { ...trip, vehicleLabel: vehicleLabel(trip.vehicleId), driverLabel: driverLabel(trip.driverId) };
 }
 
 export async function getTrips() {
-  return delay(trips.map(withLabels));
+  if (USE_MOCKS) {
+    await mockDelay();
+    return mockTrips.map(withMockLabels);
+  }
+  const { data } = await api.get("/trips");
+  const trips = data.data.map(fromBackend);
+  const [vehicles, drivers] = await Promise.all([getAssignableVehicles(true), getAssignableDrivers(true)]);
+  return trips.map((t) => ({
+    ...t,
+    vehicleLabel: vehicleLabel(t.vehicleId, vehicles),
+    driverLabel: driverLabel(t.driverId, drivers),
+  }));
 }
 
-export async function getAssignableVehicles() {
-  return delay(ASSIGNABLE_VEHICLES);
+export async function getAssignableVehicles(includeAll = false) {
+  if (USE_MOCKS) {
+    await mockDelay();
+    return ASSIGNABLE_VEHICLES;
+  }
+  const params = includeAll ? {} : { status_filter: "Available" };
+  const { data } = await api.get("/vehicles", { params });
+  return data.data.map(vehicleFromBackend);
 }
 
-export async function getAssignableDrivers() {
-  return delay(ASSIGNABLE_DRIVERS);
+export async function getAssignableDrivers(includeAll = false) {
+  if (USE_MOCKS) {
+    await mockDelay();
+    return ASSIGNABLE_DRIVERS;
+  }
+  const params = includeAll ? {} : { status_filter: "Available" };
+  const { data } = await api.get("/drivers", { params });
+  return data.data.map(driverFromBackend);
 }
 
 export async function createTrip(payload) {
-  const trip = {
-    id: `t-${Date.now()}`,
-    tripCode: generateTripCode(trips.length + 1),
-    ...payload,
-  };
-  trips = [trip, ...trips];
-  return delay(withLabels(trip));
+  if (USE_MOCKS) {
+    const trip = { id: `t-${Date.now()}`, tripCode: generateTripCode(mockTrips.length + 1), status: TRIP_STATUS.DRAFT, ...payload };
+    mockTrips = [trip, ...mockTrips];
+    return mockDelay(withMockLabels(trip));
+  }
+  const { data } = await api.post("/trips", {
+    source: payload.origin,
+    destination: payload.destination,
+    vehicle_id: payload.vehicleId,
+    driver_id: payload.driverId,
+    cargo_weight: payload.cargoWeightKg,
+    planned_distance: payload.distanceKm,
+  });
+  return fromBackend(data.data);
 }
 
-export async function updateTrip(id, payload) {
-  trips = trips.map((t) => (t.id === id ? { ...t, ...payload } : t));
-  const updated = trips.find((t) => t.id === id);
-  return delay(withLabels(updated));
+export async function dispatchTrip(id) {
+  if (USE_MOCKS) {
+    mockTrips = mockTrips.map((t) => (t.id === id ? { ...t, status: TRIP_STATUS.DISPATCHED } : t));
+    return mockDelay(withMockLabels(mockTrips.find((t) => t.id === id)));
+  }
+  const { data } = await api.post(`/trips/${id}/dispatch`);
+  return fromBackend(data.data);
 }
 
-export async function deleteTrip(id) {
-  trips = trips.filter((t) => t.id !== id);
-  return delay({ id });
+export async function completeTrip(id, payload) {
+  if (USE_MOCKS) {
+    mockTrips = mockTrips.map((t) => (t.id === id ? { ...t, status: TRIP_STATUS.COMPLETED } : t));
+    return mockDelay(withMockLabels(mockTrips.find((t) => t.id === id)));
+  }
+  const { data } = await api.post(`/trips/${id}/complete`, {
+    final_odometer: payload.finalOdometer,
+    fuel_consumed: payload.fuelConsumedLiters,
+  });
+  return fromBackend(data.data);
+}
+
+export async function cancelTrip(id) {
+  if (USE_MOCKS) {
+    mockTrips = mockTrips.map((t) => (t.id === id ? { ...t, status: TRIP_STATUS.CANCELLED } : t));
+    return mockDelay(withMockLabels(mockTrips.find((t) => t.id === id)));
+  }
+  const { data } = await api.post(`/trips/${id}/cancel`);
+  return fromBackend(data.data);
 }

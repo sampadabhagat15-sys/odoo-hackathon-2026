@@ -4,7 +4,7 @@ import axios from "axios";
 // import.meta.env.VITE_API_BASE_URL) and set USE_MOCKS to false in each
 // service file. No component ever imports axios directly — only files in
 // src/services/ do, so swapping mock -> live is a services-only change.
-export const BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+export const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
 
 const api = axios.create({
   baseURL: BASE_URL,

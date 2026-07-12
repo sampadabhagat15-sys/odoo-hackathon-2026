@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import Modal from "../ui/Modal";
 import Button from "../ui/Button";
-import { CARGO_TYPES, REGIONS } from "../../constants/trip";
-import { TRIP_STATUS } from "../../constants/status";
 import { getAssignableDrivers, getAssignableVehicles } from "../../services/trip";
 
 const FIELD_CLASS =
@@ -16,20 +14,16 @@ function fieldBorder(hasError) {
 const EMPTY_VALUES = {
   origin: "",
   destination: "",
-  region: REGIONS[0],
   vehicleId: "",
   driverId: "",
-  cargoType: CARGO_TYPES[0],
   cargoWeightKg: "",
   distanceKm: "",
-  departureDate: "",
-  expectedArrival: "",
-  status: TRIP_STATUS.DRAFT,
 };
 
-export default function TripFormModal({ open, onClose, onSubmit, trip, submitting }) {
-  const isEdit = !!trip;
-
+// Create-only: the backend has no generic PATCH/PUT for trips, only the
+// dispatch/complete/cancel action endpoints — so this modal never edits an
+// existing trip, only creates new ones.
+export default function TripFormModal({ open, onClose, onSubmit, submitting }) {
   const [vehicles, setVehicles] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [optionsLoading, setOptionsLoading] = useState(true);
@@ -44,6 +38,8 @@ export default function TripFormModal({ open, onClose, onSubmit, trip, submittin
   useEffect(() => {
     if (!open) return;
     setOptionsLoading(true);
+    // includeAll defaults to false here — only Available vehicles/drivers
+    // are offered when scheduling a new trip.
     Promise.all([getAssignableVehicles(), getAssignableDrivers()])
       .then(([v, d]) => {
         setVehicles(v);
@@ -53,8 +49,8 @@ export default function TripFormModal({ open, onClose, onSubmit, trip, submittin
   }, [open]);
 
   useEffect(() => {
-    if (open) reset(trip ? { ...trip } : EMPTY_VALUES);
-  }, [open, trip, reset]);
+    if (open) reset(EMPTY_VALUES);
+  }, [open, reset]);
 
   const submit = (values) => {
     onSubmit({
@@ -68,8 +64,8 @@ export default function TripFormModal({ open, onClose, onSubmit, trip, submittin
     <Modal
       open={open}
       onClose={onClose}
-      title={isEdit ? "Edit trip" : "Schedule a new trip"}
-      description={isEdit ? `Updating ${trip.tripCode}` : "Assign a vehicle and driver to a new trip."}
+      title="Schedule a new trip"
+      description="Assign a vehicle and driver to a new trip."
       size="lg"
       footer={
         <>
@@ -77,7 +73,7 @@ export default function TripFormModal({ open, onClose, onSubmit, trip, submittin
             Cancel
           </Button>
           <Button variant="signal" size="sm" onClick={handleSubmit(submit)} loading={submitting}>
-            {isEdit ? "Save changes" : "Schedule trip"}
+            Schedule trip
           </Button>
         </>
       }
@@ -101,24 +97,6 @@ export default function TripFormModal({ open, onClose, onSubmit, trip, submittin
             {...register("destination", { required: "Destination is required." })}
           />
           {errors.destination && <p className="mt-1 text-xs text-[var(--color-status-danger)]">{errors.destination.message}</p>}
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-[var(--color-ink-soft)]">Region</label>
-          <select className={`${FIELD_CLASS} ${fieldBorder()}`} {...register("region")}>
-            {REGIONS.map((r) => (
-              <option key={r} value={r}>{r}</option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-[var(--color-ink-soft)]">Cargo type</label>
-          <select className={`${FIELD_CLASS} ${fieldBorder()}`} {...register("cargoType")}>
-            {CARGO_TYPES.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
         </div>
 
         <div>
@@ -164,7 +142,7 @@ export default function TripFormModal({ open, onClose, onSubmit, trip, submittin
         </div>
 
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-[var(--color-ink-soft)]">Distance (km)</label>
+          <label className="mb-1.5 block text-xs font-medium text-[var(--color-ink-soft)]">Planned distance (km)</label>
           <input
             type="number"
             min="1"
@@ -173,36 +151,6 @@ export default function TripFormModal({ open, onClose, onSubmit, trip, submittin
             {...register("distanceKm", { required: "Required.", min: { value: 1, message: "Must be greater than 0." } })}
           />
           {errors.distanceKm && <p className="mt-1 text-xs text-[var(--color-status-danger)]">{errors.distanceKm.message}</p>}
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-[var(--color-ink-soft)]">Departure date</label>
-          <input
-            type="date"
-            className={`${FIELD_CLASS} ${fieldBorder(errors.departureDate)}`}
-            {...register("departureDate", { required: "Departure date is required." })}
-          />
-          {errors.departureDate && <p className="mt-1 text-xs text-[var(--color-status-danger)]">{errors.departureDate.message}</p>}
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-[var(--color-ink-soft)]">Expected arrival</label>
-          <input
-            type="date"
-            className={`${FIELD_CLASS} ${fieldBorder(errors.expectedArrival)}`}
-            {...register("expectedArrival", { required: "Expected arrival is required." })}
-          />
-          {errors.expectedArrival && <p className="mt-1 text-xs text-[var(--color-status-danger)]">{errors.expectedArrival.message}</p>}
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-[var(--color-ink-soft)]">Status</label>
-          <select className={`${FIELD_CLASS} ${fieldBorder()}`} {...register("status")}>
-            {Object.values(TRIP_STATUS).map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-          {!isEdit && <p className="mt-1 text-xs text-[var(--color-ink-faint)]">New trips default to Draft.</p>}
         </div>
       </form>
     </Modal>
