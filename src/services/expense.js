@@ -6,15 +6,14 @@ function delay(value) {
   return new Promise((resolve) => setTimeout(() => resolve(value), DELAY_MS));
 }
 
-// NOTE: vehicleId/tripId below reference the `id` field on your vehicle/trip
-// mock records. Swap `registrationNumber` in Expenses.jsx if your vehicle.js
-// uses a different field name for the reg number.
+// vehicleId/tripId below reference the `id` field on your vehicle/trip mock
+// records — aligned to trip.js's "v-1".."v-4" / "t-1".."t-6" format.
 let expenses = [
   {
     id: "exp-001",
     date: "2026-06-18",
     category: "Toll",
-    vehicleId: "veh_1",
+    vehicleId: "v-1",
     tripId: "t-1",
     amount: 450,
     description: "NH-48 toll — Jaipur to Ajmer leg",
@@ -27,7 +26,7 @@ let expenses = [
     id: "exp-002",
     date: "2026-06-22",
     category: "Fine",
-    vehicleId: "veh_3",
+    vehicleId: "v-3",
     tripId: null,
     amount: 1200,
     description: "Overloading fine — RTO checkpoint",
@@ -40,7 +39,7 @@ let expenses = [
     id: "exp-003",
     date: "2026-06-25",
     category: "Parking",
-    vehicleId: "veh_2",
+    vehicleId: "v-2",
     tripId: "t-2",
     amount: 150,
     description: "Overnight parking — Jodhpur depot",
@@ -53,7 +52,7 @@ let expenses = [
     id: "exp-004",
     date: "2026-06-28",
     category: "Repair",
-    vehicleId: "veh_1",
+    vehicleId: "v-1",
     tripId: null,
     amount: 3200,
     description: "Roadside puncture repair, kit replacement",
@@ -66,7 +65,7 @@ let expenses = [
     id: "exp-005",
     date: "2026-07-01",
     category: "Other",
-    vehicleId: "veh_4",
+    vehicleId: "v-4",
     tripId: "t-5",
     amount: 600,
     description: "Cargo tarpaulin replacement",
@@ -117,7 +116,7 @@ export async function reviewExpense(id, status, approvedBy) {
   return updateExpense(id, { status, approvedBy });
 }
 
-// Used by Reports (3.7/3.8): total expense cost per vehicle, excludes Fuel/Maintenance
+// Used by Reports: total expense cost per vehicle, excludes Fuel/Maintenance
 // which already have their own totals in fuel.js/maintenance.js
 export async function getExpenseTotalsByVehicle() {
   const totals = {};
