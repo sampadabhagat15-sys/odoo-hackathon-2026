@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # TransitOps — Frontend
 
 This is the frontend (the part people see and click on) for TransitOps, a
@@ -99,3 +100,6 @@ names match what you see in the sidebar (e.g. `Dashboard.jsx`,
 - **Port already in use** → Something else is already running on
   `localhost:5173`. Close it, or just check the terminal — Vite will
   automatically offer you the next free port instead.
+=======
+# odoo-hackathon-2026
+>>>>>>> f5cb16d45797e0b8343c9b3232d7ab6007d60210
