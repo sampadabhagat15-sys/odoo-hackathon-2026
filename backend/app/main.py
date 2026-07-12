@@ -67,6 +67,26 @@ app.include_router(
 app.include_router(
     trips.router, prefix=f"{settings.API_V1_PREFIX}/trips", tags=["Trips"]
 )
+app.include_router(
+    maintenance.router,
+    prefix=f"{settings.API_V1_PREFIX}/maintenance",
+    tags=["Maintenance"],
+)
+app.include_router(
+    fuel_expense.router,
+    prefix=f"{settings.API_V1_PREFIX}",
+    tags=["Fuel & Expenses"],
+)
+app.include_router(
+    dashboard.router,
+    prefix=f"{settings.API_V1_PREFIX}/dashboard",
+    tags=["Dashboard"],
+)
+app.include_router(
+    reports.router,
+    prefix=f"{settings.API_V1_PREFIX}/reports",
+    tags=["Reports & Analytics"],
+)
 
 
 @app.get("/", tags=["Health"])

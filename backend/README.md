@@ -10,8 +10,12 @@ alongside `TransitOps/frontend/` (Avika's React app).
 - [x] **Module 1** — Project scaffold, DB models (all 7 entities), Auth + RBAC
 - [x] **Module 2** — Vehicle + Driver CRUD
 - [x] **Module 3** — Trip Management (create, dispatch, complete, cancel + business rules)
-- [ ] Module 4 — Maintenance + Fuel & Expense tracking
-- [ ] Module 5 — Dashboard KPIs + Reports/Analytics + CSV export
+- [x] **Module 4** — Maintenance + Fuel & Expense tracking
+- [x] **Module 5** — Dashboard KPIs + Reports/Analytics + CSV export
+
+**All 5 backend modules complete.** Every mandatory deliverable from
+section 7 of the spec is implemented except PDF export (spec marks
+this optional; CSV export is done).
 
 ## Locked-in project conventions (do not change)
 
@@ -169,3 +173,60 @@ dispatched trip rejected (400), completing a non-dispatched trip
 rejected (400), odometer regression rejected (400) — and the full
 happy path (create → dispatch → complete) correctly updates the
 vehicle's odometer and both statuses at each step.
+
+## Module 4 — Maintenance + Fuel & Expense (tested end-to-end against Postgres)
+
+`fleet_manager`/`admin` for maintenance; `dispatcher`/`fleet_manager`/`admin`
+for fuel logs & expenses; all GETs open.
+
+- `POST /api/v1/maintenance` — create (status: Active). **Automatically
+  sets the vehicle to In Shop**, removing it from dispatch selection.
+  Blocked if vehicle is On Trip, Retired, or already has active
+  maintenance.
+- `GET /api/v1/maintenance?vehicle_id=&status_filter=` — list with filters
+- `GET /api/v1/maintenance/{id}` — get one
+- `POST /api/v1/maintenance/{id}/close` — restores vehicle to Available
+  (unless it was separately marked Retired)
+- `POST /api/v1/fuel-logs` / `GET /api/v1/fuel-logs?vehicle_id=&trip_id=`
+- `POST /api/v1/expenses` / `GET /api/v1/expenses?vehicle_id=`
+- `GET /api/v1/vehicles/{id}/operational-cost` — Fuel + Maintenance cost
+  per spec 3.7 (Expenses/tolls tracked separately, not included — spec
+  literally says "Fuel + Maintenance")
+
+Verified: starting maintenance flips vehicle to In Shop and blocks
+dispatch of that vehicle; a second maintenance record on an already-
+In-Shop vehicle is rejected; closing restores Available; operational
+cost correctly sums fuel + maintenance.
+
+## Module 5 — Dashboard KPIs + Reports/Analytics + CSV export (tested)
+
+All GET, no RBAC restriction (matches the open-read pattern used
+everywhere else in this backend).
+
+- `GET /api/v1/dashboard/kpis?type=&region=` — Active Vehicles, Available
+  Vehicles, Vehicles in Maintenance, Active Trips, Pending Trips,
+  Drivers On Duty, Fleet Utilization %. **Naming ambiguities in the
+  spec, resolved as documented in `dashboard_service.py`:**
+  "Active Vehicles" = non-Retired; "Drivers On Duty" = Available + On
+  Trip; "Fleet Utilization %" = On-Trip vehicles ÷ active vehicles.
+  Adjust these if judges/organizers clarify a different definition.
+- `GET /api/v1/reports/fuel-efficiency/{vehicle_id}` — Distance/Fuel
+  across all Completed trips
+- `GET /api/v1/reports/vehicle-roi/{vehicle_id}?revenue=<amount>` —
+  **Revenue must be passed as a query param.** The spec's ROI formula
+  needs a Revenue figure, but there's no Revenue entity/field anywhere
+  in the spec's data model (Users, Vehicles, Drivers, Trips,
+  Maintenance, FuelLog, Expense — no Revenue). Worth raising with your
+  team: if trips are meant to generate revenue, that likely needs a
+  field on Trip (e.g. rate per km). Until then this takes it as input.
+- `GET /api/v1/reports/fleet` — per-vehicle report as JSON (efficiency +
+  cost for every vehicle)
+- `GET /api/v1/reports/fleet/csv` — same data, downloadable CSV. **This
+  one endpoint does NOT use the `{success,message,data}` envelope** —
+  it returns a raw CSV file, which is the one documented exception
+  since file downloads and JSON envelopes aren't compatible.
+
+Verified against real data: KPIs correctly count by status, fuel
+efficiency correctly computed from a real completed trip (350km/40L =
+8.75 km/L), ROI math verified, CSV export produces a real downloadable
+file with computed columns matching the JSON report exactly.
