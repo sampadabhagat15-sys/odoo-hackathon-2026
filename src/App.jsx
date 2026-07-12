@@ -63,7 +63,10 @@ export default function App() {
                 path={ROUTES.REPORTS}
                 element={<ProtectedRoute allow={ROUTE_ACCESS.reports}><Reports /></ProtectedRoute>}
               />
-              <Route path={ROUTES.SETTINGS} element={<Settings />} />
+              <Route
+                path={ROUTES.SETTINGS}
+                element={<ProtectedRoute allow={ROUTE_ACCESS.settings}><Settings /></ProtectedRoute>}
+              />
             </Route>
 
             <Route path="*" element={<NotFound />} />

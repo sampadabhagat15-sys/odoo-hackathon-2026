@@ -26,6 +26,12 @@ export const MAINTENANCE_STATUS = {
   OVERDUE: "Overdue",
 };
 
+export const EXPENSE_STATUS = {
+  PENDING: "Pending",
+  APPROVED: "Approved",
+  REJECTED: "Rejected",
+};
+
 // Maps a status string to the token pair used by <StatusBadge>.
 // tone keys correspond to --color-status-* variables in index.css.
 export const STATUS_TONE = {
@@ -43,4 +49,7 @@ export const STATUS_TONE = {
   [MAINTENANCE_STATUS.IN_PROGRESS]: "ontrip",
   [MAINTENANCE_STATUS.COMPLETED]: "available",
   [MAINTENANCE_STATUS.OVERDUE]: "danger",
+  [EXPENSE_STATUS.PENDING]: "shop",
+  [EXPENSE_STATUS.APPROVED]: "available",
+  [EXPENSE_STATUS.REJECTED]: "danger",
 };
