@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+@theme {
+  /* ---- Type ---- */
+  --font-display: "Space Grotesk", "Inter", sans-serif;
+  --font-sans: "Inter", "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* ---- Surfaces ---- */
+  --color-bg: #f5f6f8;
+  --color-surface: #ffffff;
+  --color-surface-soft: #fafbfc;
+  --color-border: #e4e7ec;
+  --color-border-soft: #edeff2;
+
+  /* ---- Ink ---- */
+  --color-ink: #0f1522;
+  --color-ink-soft: #4a5468;
+  --color-ink-faint: #8a93a3;
+
+  /* ---- Console / Sidebar (deep navy — dispatch-console feel) ---- */
+  --color-console: #0a0f1c;
+  --color-console-soft: #141b2c;
+  --color-console-border: #232c40;
+  --color-console-ink: #c6cddb;
+  --color-console-ink-soft: #7c869c;
+
+  /* ---- Signal accent (transport / signage amber) ---- */
+  --color-signal: #f5a623;
+  --color-signal-dim: #b97a12;
+  --color-signal-soft: #fef2df;
+
+  /* ---- Status ---- */
+  --color-status-available: #16a34a;
+  --color-status-available-soft: #e8f7ee;
+  --color-status-ontrip: #2563eb;
+  --color-status-ontrip-soft: #e8f0fe;
+  --color-status-shop: #f59e0b;
+  --color-status-shop-soft: #fef3e0;
+  --color-status-retired: #667085;
+  --color-status-retired-soft: #eef0f3;
+  --color-status-danger: #dc2626;
+  --color-status-danger-soft: #fdecec;
+
+  --radius-card: 0.875rem;
+  --radius-control: 0.5rem;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+::selection {
+  background-color: var(--color-signal-soft);
+  color: var(--color-signal-dim);
+}
+
+/* Route-line signature motif: a dashed connector used behind active
+   sidebar items and as a divider under section headers. */
+.route-line {
+  position: relative;
+}
+.route-line::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 100%;
+  border-top: 1.5px dashed var(--color-console-border);
+  z-index: 0;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: 999px;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-8px) translateX(8px); }
+  to { opacity: 1; transform: translateY(0) translateX(0); }
+}
+.animate-toast-in {
+  animation: toast-in 0.18s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
