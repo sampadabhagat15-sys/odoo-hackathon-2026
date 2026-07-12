@@ -8,7 +8,7 @@ alongside `TransitOps/frontend/` (Avika's React app).
 ## Module status
 
 - [x] **Module 1** — Project scaffold, DB models (all 7 entities), Auth + RBAC
-- [ ] Module 2 — Vehicle + Driver CRUD
+- [x] **Module 2** — Vehicle + Driver CRUD
 - [ ] Module 3 — Trip Management (create, dispatch, complete, cancel + business rules)
 - [ ] Module 4 — Maintenance + Fuel & Expense tracking
 - [ ] Module 5 — Dashboard KPIs + Reports/Analytics + CSV export
@@ -114,3 +114,28 @@ router decorator — see `app/core/deps.py`.
 alembic revision --autogenerate -m "describe the change"
 alembic upgrade head
 ```
+
+## Module 2 — Vehicle + Driver CRUD (tested end-to-end against Postgres)
+
+**Vehicles** — `fleet_manager`/`admin` only for write operations:
+- `POST /api/v1/vehicles` — create (unique registration_number enforced)
+- `GET /api/v1/vehicles?type=&status_filter=&region=` — list with filters
+- `GET /api/v1/vehicles/{id}` — get one
+- `PUT /api/v1/vehicles/{id}` — partial update (status not editable here)
+- `DELETE /api/v1/vehicles/{id}` — soft-delete, sets status to Retired
+  (blocked if vehicle is On Trip)
+
+**Drivers** — `fleet_manager`/`safety_officer`/`admin` for general CRUD;
+suspend/reactivate restricted to `safety_officer`/`admin` only:
+- `POST /api/v1/drivers` — create (unique license_number enforced)
+- `GET /api/v1/drivers?status_filter=` — list with filter
+- `GET /api/v1/drivers/{id}` — get one
+- `PUT /api/v1/drivers/{id}` — partial update
+- `POST /api/v1/drivers/{id}/suspend` — compliance action (blocked if On Trip)
+- `POST /api/v1/drivers/{id}/reactivate` — only works if currently Suspended
+
+Both entities: status is intentionally NOT editable via the generic
+update endpoint — it's controlled by dedicated workflows (trip
+dispatch/complete/cancel in Module 3, suspend/reactivate here) so state
+transitions stay consistent with the spec's business rules instead of
+being freely overwritable.
