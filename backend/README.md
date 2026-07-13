@@ -174,6 +174,29 @@ rejected (400), odometer regression rejected (400) — and the full
 happy path (create → dispatch → complete) correctly updates the
 vehicle's odometer and both statuses at each step.
 
+## Post-hackathon addition — Expense review workflow
+
+Added after the original 5 modules, once real frontend integration
+surfaced that Expenses needed an approval workflow the spec didn't
+originally call out. `Expense` now has:
+- `type`: expanded to `Toll`, `Fine`, `Parking`, `Repair`, `Other`
+  (was just Toll/Other)
+- `status`: `Pending` (default) → `Approved` / `Rejected`
+- `submitted_by`, `reviewed_by` (both FK to `users.id`), `reviewed_at`
+
+New endpoints:
+- `POST /api/v1/expenses/{id}/approve` / `POST /api/v1/expenses/{id}/reject`
+  — restricted to `financial_analyst`/`fleet_manager`/`admin`, only
+  works on a Pending expense (400 otherwise)
+- `POST /api/v1/expenses` now requires auth (previously anonymous-body
+  only) so `submitted_by` can be captured automatically from the JWT
+
+Migrated via two Alembic revisions (Postgres enums need explicit
+`ALTER TYPE ... ADD VALUE` for new enum values — autogenerate doesn't
+detect Python enum changes on its own, so that part was hand-written).
+Verified end-to-end: create → Pending → approve/reject → re-review
+blocked (400) → wrong-role create/review blocked (403).
+
 ## Module 4 — Maintenance + Fuel & Expense (tested end-to-end against Postgres)
 
 `fleet_manager`/`admin` for maintenance; `dispatcher`/`fleet_manager`/`admin`

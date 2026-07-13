@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import require_roles
+from app.core.deps import get_current_user, require_roles
+from app.models.user import User
 from app.schemas.envelope import APIResponse
 from app.schemas.fuel_expense import (
     ExpenseCreate,
@@ -20,6 +21,11 @@ router = APIRouter()
 # Fleet Manager and Admin have full access too. Financial Analyst is
 # intentionally read-only here (reviews, doesn't record transactions).
 LOG_FUEL_EXPENSE = require_roles("dispatcher", "fleet_manager", "admin")
+
+# Approve/reject is a Financial Analyst review action per the spec
+# ("Financial Analyst reviews operational expenses"); Fleet Manager
+# kept as an operational super-role, Admin has full access everywhere.
+REVIEW_EXPENSE = require_roles("financial_analyst", "fleet_manager", "admin")
 
 
 @router.post(
@@ -54,12 +60,17 @@ def list_fuel_logs(
     response_model=APIResponse[ExpenseOut],
     status_code=status.HTTP_201_CREATED,
     summary="Record an expense",
-    description="e.g. tolls or other operational costs (separate from fuel/maintenance).",
+    description="e.g. tolls, fines, parking, repairs, or other operational costs "
+    "(separate from fuel/maintenance). Starts as Pending, awaiting review.",
     dependencies=[Depends(LOG_FUEL_EXPENSE)],
 )
-def create_expense(payload: ExpenseCreate, db: Session = Depends(get_db)):
-    expense = fuel_expense_service.create_expense(db, payload)
-    return APIResponse(message="Expense recorded", data=expense)
+def create_expense(
+    payload: ExpenseCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    expense = fuel_expense_service.create_expense(db, payload, submitted_by=current_user.id)
+    return APIResponse(message="Expense recorded, pending review", data=expense)
 
 
 @router.get(
@@ -71,6 +82,36 @@ def create_expense(payload: ExpenseCreate, db: Session = Depends(get_db)):
 def list_expenses(vehicle_id: Optional[str] = None, db: Session = Depends(get_db)):
     expenses = fuel_expense_service.list_expenses(db, vehicle_id)
     return APIResponse(data=expenses)
+
+
+@router.post(
+    "/expenses/{expense_id}/approve",
+    response_model=APIResponse[ExpenseOut],
+    summary="Approve a pending expense",
+    dependencies=[Depends(REVIEW_EXPENSE)],
+)
+def approve_expense(
+    expense_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    expense = fuel_expense_service.approve_expense(db, expense_id, reviewer_id=current_user.id)
+    return APIResponse(message="Expense approved", data=expense)
+
+
+@router.post(
+    "/expenses/{expense_id}/reject",
+    response_model=APIResponse[ExpenseOut],
+    summary="Reject a pending expense",
+    dependencies=[Depends(REVIEW_EXPENSE)],
+)
+def reject_expense(
+    expense_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    expense = fuel_expense_service.reject_expense(db, expense_id, reviewer_id=current_user.id)
+    return APIResponse(message="Expense rejected", data=expense)
 
 
 @router.get(

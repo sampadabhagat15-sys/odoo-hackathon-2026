@@ -55,4 +55,13 @@ class MaintenanceStatus(str, enum.Enum):
 
 class ExpenseType(str, enum.Enum):
     TOLL = "Toll"
+    FINE = "Fine"
+    PARKING = "Parking"
+    REPAIR = "Repair"
     OTHER = "Other"
+
+
+class ExpenseStatus(str, enum.Enum):
+    PENDING = "Pending"
+    APPROVED = "Approved"
+    REJECTED = "Rejected"

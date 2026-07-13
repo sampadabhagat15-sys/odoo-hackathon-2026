@@ -1,129 +1,104 @@
-// services/expense.js
+import api, { mockDelay } from "./api";
 import { EXPENSE_STATUS } from "../constants/status";
+import { getAssignableVehicles } from "./trip";
 
-const DELAY_MS = 400;
-function delay(value) {
-  return new Promise((resolve) => setTimeout(() => resolve(value), DELAY_MS));
+// Flip to true to fall back to mock data for offline/demo use.
+const USE_MOCKS = false;
+
+function vehicleLabel(vehicleId, vehicles) {
+  const v = vehicles.find((x) => x.id === vehicleId);
+  return v ? `${v.name} · ${v.registrationNumber}` : "—";
 }
 
-// vehicleId/tripId below reference the `id` field on your vehicle/trip mock
-// records — aligned to trip.js's "v-1".."v-4" / "t-1".."t-6" format.
-let expenses = [
+// backend snake_case -> frontend camelCase
+function fromBackend(e) {
+  return {
+    id: e.id,
+    vehicleId: e.vehicle_id,
+    category: e.type,
+    amount: e.amount,
+    date: e.date,
+    description: e.description,
+    status: e.status,
+    submittedBy: e.submitted_by,
+    reviewedBy: e.reviewed_by,
+    reviewedAt: e.reviewed_at,
+  };
+}
+
+let mockExpenses = [
   {
     id: "exp-001",
-    date: "2026-06-18",
-    category: "Toll",
     vehicleId: "v-1",
-    tripId: "t-1",
+    category: "Toll",
     amount: 450,
+    date: "2026-06-18",
     description: "NH-48 toll — Jaipur to Ajmer leg",
     status: EXPENSE_STATUS.APPROVED,
-    submittedBy: "driver@transitops.io",
-    approvedBy: "finance@transitops.io",
-    createdAt: "2026-06-18T09:15:00.000Z",
   },
   {
     id: "exp-002",
-    date: "2026-06-22",
-    category: "Fine",
     vehicleId: "v-3",
-    tripId: null,
+    category: "Fine",
     amount: 1200,
+    date: "2026-06-22",
     description: "Overloading fine — RTO checkpoint",
     status: EXPENSE_STATUS.PENDING,
-    submittedBy: "fleet.manager@transitops.io",
-    approvedBy: null,
-    createdAt: "2026-06-22T14:02:00.000Z",
-  },
-  {
-    id: "exp-003",
-    date: "2026-06-25",
-    category: "Parking",
-    vehicleId: "v-2",
-    tripId: "t-2",
-    amount: 150,
-    description: "Overnight parking — Jodhpur depot",
-    status: EXPENSE_STATUS.PENDING,
-    submittedBy: "driver@transitops.io",
-    approvedBy: null,
-    createdAt: "2026-06-25T20:30:00.000Z",
-  },
-  {
-    id: "exp-004",
-    date: "2026-06-28",
-    category: "Repair",
-    vehicleId: "v-1",
-    tripId: null,
-    amount: 3200,
-    description: "Roadside puncture repair, kit replacement",
-    status: EXPENSE_STATUS.REJECTED,
-    submittedBy: "fleet.manager@transitops.io",
-    approvedBy: "finance@transitops.io",
-    createdAt: "2026-06-28T11:45:00.000Z",
-  },
-  {
-    id: "exp-005",
-    date: "2026-07-01",
-    category: "Other",
-    vehicleId: "v-4",
-    tripId: "t-5",
-    amount: 600,
-    description: "Cargo tarpaulin replacement",
-    status: EXPENSE_STATUS.PENDING,
-    submittedBy: "driver@transitops.io",
-    approvedBy: null,
-    createdAt: "2026-07-01T08:20:00.000Z",
   },
 ];
 
-let nextId = 6;
-
 export async function getExpenses() {
-  return delay([...expenses]);
+  if (USE_MOCKS) {
+    const vehicles = await getAssignableVehicles(true);
+    await mockDelay(400);
+    return mockExpenses.map((e) => ({ ...e, vehicleLabel: vehicleLabel(e.vehicleId, vehicles) }));
+  }
+
+  const { data } = await api.get("/expenses");
+  const expenses = data.data.map(fromBackend);
+  const vehicles = await getAssignableVehicles(true);
+  return expenses.map((e) => ({ ...e, vehicleLabel: vehicleLabel(e.vehicleId, vehicles) }));
 }
 
+export async function getExpenseVehicles() {
+  // Any vehicle can have an expense logged against it regardless of
+  // current status — same reasoning as Fuel Logs.
+  return getAssignableVehicles(true);
+}
+
+// payload: { vehicleId, category, amount, date, description }
+// No update or delete — only create, and the two review actions below.
 export async function createExpense(payload) {
-  const newExpense = {
-    id: `exp-${String(nextId++).padStart(3, "0")}`,
-    status: EXPENSE_STATUS.PENDING,
-    approvedBy: null,
-    createdAt: new Date().toISOString(),
-    ...payload,
-  };
-  expenses = [newExpense, ...expenses];
-  return delay(newExpense);
-}
+  if (USE_MOCKS) {
+    const expense = { id: `exp-${Date.now()}`, status: EXPENSE_STATUS.PENDING, ...payload };
+    mockExpenses = [expense, ...mockExpenses];
+    return mockDelay(expense);
+  }
 
-export async function updateExpense(id, payload) {
-  let updated = null;
-  expenses = expenses.map((e) => {
-    if (e.id === id) {
-      updated = { ...e, ...payload };
-      return updated;
-    }
-    return e;
+  const { data } = await api.post("/expenses", {
+    vehicle_id: payload.vehicleId,
+    type: payload.category,
+    amount: payload.amount,
+    date: payload.date,
+    description: payload.description || null,
   });
-  return delay(updated);
+  return fromBackend(data.data);
 }
 
-export async function deleteExpense(id) {
-  expenses = expenses.filter((e) => e.id !== id);
-  return delay({ id });
+export async function approveExpense(id) {
+  if (USE_MOCKS) {
+    mockExpenses = mockExpenses.map((e) => (e.id === id ? { ...e, status: EXPENSE_STATUS.APPROVED } : e));
+    return mockDelay(mockExpenses.find((e) => e.id === id));
+  }
+  const { data } = await api.post(`/expenses/${id}/approve`);
+  return fromBackend(data.data);
 }
 
-// Financial Analyst / Fleet Manager action — approve or reject a pending expense
-export async function reviewExpense(id, status, approvedBy) {
-  return updateExpense(id, { status, approvedBy });
-}
-
-// Used by Reports: total expense cost per vehicle, excludes Fuel/Maintenance
-// which already have their own totals in fuel.js/maintenance.js
-export async function getExpenseTotalsByVehicle() {
-  const totals = {};
-  expenses
-    .filter((e) => e.status !== EXPENSE_STATUS.REJECTED)
-    .forEach((e) => {
-      totals[e.vehicleId] = (totals[e.vehicleId] || 0) + e.amount;
-    });
-  return delay(totals);
+export async function rejectExpense(id) {
+  if (USE_MOCKS) {
+    mockExpenses = mockExpenses.map((e) => (e.id === id ? { ...e, status: EXPENSE_STATUS.REJECTED } : e));
+    return mockDelay(mockExpenses.find((e) => e.id === id));
+  }
+  const { data } = await api.post(`/expenses/${id}/reject`);
+  return fromBackend(data.data);
 }

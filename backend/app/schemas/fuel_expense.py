@@ -3,7 +3,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from app.models.enums import ExpenseType
+from app.models.enums import ExpenseType, ExpenseStatus
 from app.schemas.base import ORMBase, ISODateTime
 
 
@@ -41,5 +41,9 @@ class ExpenseOut(ORMBase):
     amount: float
     date: date
     description: Optional[str]
+    status: ExpenseStatus
+    submitted_by: Optional[str]
+    reviewed_by: Optional[str]
+    reviewed_at: Optional[ISODateTime]
     created_at: ISODateTime
     updated_at: ISODateTime

@@ -111,9 +111,6 @@ async function getAll({ search = "", status = "all", license = "all", sortBy = "
     return { items, total, page, pageSize };
   }
 
-  // Backend only supports status_filter — no search, license, sortBy, or
-  // pagination params. Fetch the (status-filtered) list, then do search +
-  // license filter + sort + pagination client-side, same as mock.
   const params = {};
   if (status !== "all") params.status_filter = status;
 
@@ -170,10 +167,7 @@ async function update(id, payload) {
 
 // NOTE: the backend has no DELETE /drivers/{id} — only POST
 // /drivers/{id}/suspend, which sets status to Suspended rather than
-// actually removing the record. Kept the exported name "remove" so any
-// existing "Delete" button in Drivers.jsx keeps working without changes,
-// but real-mode it now suspends instead of deleting. Consider relabeling
-// that button "Suspend" in the UI so it doesn't imply permanent removal.
+// actually removing the record.
 async function remove(id) {
   if (USE_MOCKS) {
     await mockDelay(350);
@@ -184,12 +178,23 @@ async function remove(id) {
   return fromBackend(data.data);
 }
 
-// Explicit alias, in case Drivers.jsx gets updated to call this directly
-// instead of the repurposed remove().
 const suspend = remove;
+
+// Un-suspends a driver: POST /drivers/{id}/reactivate, sets status back
+// to Available. Backend rejects this if the driver isn't currently
+// Suspended (e.g. calling it twice, or on a driver that's Off Duty).
+async function reactivate(id) {
+  if (USE_MOCKS) {
+    await mockDelay(350);
+    MOCK_DRIVERS = MOCK_DRIVERS.map((d) => (d.id === id ? { ...d, status: DRIVER_STATUS.AVAILABLE } : d));
+    return MOCK_DRIVERS.find((d) => d.id === id);
+  }
+  const { data } = await api.post(`/drivers/${id}/reactivate`);
+  return fromBackend(data.data);
+}
 
 function isEligibleForDispatch(driver) {
   return driver.status === DRIVER_STATUS.AVAILABLE && !isPast(driver.licenseExpiry);
 }
 
-export default { getAll, create, update, remove, suspend, isEligibleForDispatch };
+export default { getAll, create, update, remove, suspend, reactivate, isEligibleForDispatch };

@@ -1,11 +1,9 @@
-// components/expenses/ExpenseFormModal.jsx
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import Modal from "../ui/Modal";
 import Button from "../ui/Button";
 import { EXPENSE_CATEGORIES } from "../../constants/expense";
-import vehicleService from "../../services/vehicle";
-import { getTrips } from "../../services/trip";
+import { getExpenseVehicles } from "../../services/expense";
 
 const FIELD_CLASS =
   "w-full rounded-[var(--radius-control)] border bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-signal)]";
@@ -18,17 +16,16 @@ const EMPTY_VALUES = {
   date: "",
   category: EXPENSE_CATEGORIES[0],
   vehicleId: "",
-  tripId: "",
   amount: "",
   description: "",
 };
 
-export default function ExpenseFormModal({ open, onClose, onSubmit, expense, submitting }) {
-  const isEdit = !!expense;
-
+// Create-only — no update/delete on the backend. Trip linkage dropped
+// entirely: the backend's Expense model has no trip_id field at all
+// (unlike FuelLog, which does) — an expense is tracked per-vehicle only.
+export default function ExpenseFormModal({ open, onClose, onSubmit, submitting }) {
   const [vehicles, setVehicles] = useState([]);
-  const [trips, setTrips] = useState([]);
-  const [optionsLoading, setOptionsLoading] = useState(true);
+  const [vehiclesLoading, setVehiclesLoading] = useState(true);
 
   const {
     register,
@@ -39,24 +36,20 @@ export default function ExpenseFormModal({ open, onClose, onSubmit, expense, sub
 
   useEffect(() => {
     if (!open) return;
-    setOptionsLoading(true);
-    Promise.all([vehicleService.getAll({ pageSize: 1000 }), getTrips()])
-      .then(([vResult, t]) => {
-        setVehicles(vResult.items);
-        setTrips(t);
-      })
-      .finally(() => setOptionsLoading(false));
+    setVehiclesLoading(true);
+    getExpenseVehicles()
+      .then(setVehicles)
+      .finally(() => setVehiclesLoading(false));
   }, [open]);
 
   useEffect(() => {
-    if (open) reset(expense ? { ...expense, tripId: expense.tripId || "" } : EMPTY_VALUES);
-  }, [open, expense, reset]);
+    if (open) reset(EMPTY_VALUES);
+  }, [open, reset]);
 
   const submit = (values) => {
     onSubmit({
       ...values,
       amount: Number(values.amount),
-      tripId: values.tripId || null,
     });
   };
 
@@ -64,8 +57,8 @@ export default function ExpenseFormModal({ open, onClose, onSubmit, expense, sub
     <Modal
       open={open}
       onClose={onClose}
-      title={isEdit ? "Edit expense" : "Log an expense"}
-      description={isEdit ? `Updating expense for ${expense.description}` : "Record a toll, parking, fine, repair, or other operational expense."}
+      title="Log an expense"
+      description="Record a toll, fine, parking, repair, or other operational expense. It starts as Pending, awaiting review."
       size="lg"
       footer={
         <>
@@ -73,7 +66,7 @@ export default function ExpenseFormModal({ open, onClose, onSubmit, expense, sub
             Cancel
           </Button>
           <Button variant="signal" size="sm" onClick={handleSubmit(submit)} loading={submitting}>
-            {isEdit ? "Save changes" : "Log expense"}
+            Log expense
           </Button>
         </>
       }
@@ -98,31 +91,19 @@ export default function ExpenseFormModal({ open, onClose, onSubmit, expense, sub
           </select>
         </div>
 
-        <div>
+        <div className="sm:col-span-2">
           <label className="mb-1.5 block text-xs font-medium text-[var(--color-ink-soft)]">Vehicle</label>
           <select
             className={`${FIELD_CLASS} ${fieldBorder(errors.vehicleId)}`}
-            disabled={optionsLoading}
+            disabled={vehiclesLoading}
             {...register("vehicleId", { required: "Select a vehicle." })}
           >
-            <option value="">{optionsLoading ? "Loading…" : "Select a vehicle"}</option>
+            <option value="">{vehiclesLoading ? "Loading…" : "Select a vehicle"}</option>
             {vehicles.map((v) => (
               <option key={v.id} value={v.id}>{v.name} · {v.registrationNumber}</option>
             ))}
           </select>
           {errors.vehicleId && <p className="mt-1 text-xs text-[var(--color-status-danger)]">{errors.vehicleId.message}</p>}
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-[var(--color-ink-soft)]">
-            Trip <span className="text-[var(--color-ink-faint)]">(optional)</span>
-          </label>
-          <select className={`${FIELD_CLASS} ${fieldBorder()}`} disabled={optionsLoading} {...register("tripId")}>
-            <option value="">No trip</option>
-            {trips.map((t) => (
-              <option key={t.id} value={t.id}>{t.tripCode} · {t.origin} → {t.destination}</option>
-            ))}
-          </select>
         </div>
 
         <div>
@@ -139,14 +120,15 @@ export default function ExpenseFormModal({ open, onClose, onSubmit, expense, sub
         </div>
 
         <div className="sm:col-span-2">
-          <label className="mb-1.5 block text-xs font-medium text-[var(--color-ink-soft)]">Description</label>
+          <label className="mb-1.5 block text-xs font-medium text-[var(--color-ink-soft)]">
+            Description <span className="text-[var(--color-ink-faint)]">(optional)</span>
+          </label>
           <textarea
             rows={3}
             className={`${FIELD_CLASS} ${fieldBorder(errors.description)}`}
             placeholder="NH-48 toll — Jaipur to Ajmer leg"
-            {...register("description", { required: "Description is required." })}
+            {...register("description")}
           />
-          {errors.description && <p className="mt-1 text-xs text-[var(--color-status-danger)]">{errors.description.message}</p>}
         </div>
       </form>
     </Modal>
