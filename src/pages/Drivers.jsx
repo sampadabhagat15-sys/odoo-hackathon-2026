@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { FiPlus, FiEdit2, FiTrash2, FiUsers, FiAlertTriangle } from "react-icons/fi";
+import { FiPlus, FiEdit2, FiUserX, FiUserCheck, FiUsers, FiAlertTriangle } from "react-icons/fi";
 import DataTable from "../components/ui/DataTable";
 import SearchBar from "../components/ui/SearchBar";
 import FilterDropdown from "../components/ui/FilterDropdown";
@@ -9,8 +9,10 @@ import Button from "../components/ui/Button";
 import StatusBadge from "../components/ui/StatusBadge";
 import ConfirmationDialog from "../components/ui/ConfirmationDialog";
 import DriverFormModal from "../components/drivers/DriverFormModal";
+import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { LICENSE_CATEGORIES } from "../constants/driver";
+import { ROLES } from "../constants/roles";
 import { DRIVER_STATUS } from "../constants/status";
 import { formatDate, isPast, isWithinDays } from "../utils/date";
 import driverService from "../services/driver";
@@ -48,7 +50,13 @@ function LicenseExpiry({ date }) {
 }
 
 export default function Drivers() {
+  const { user } = useAuth();
   const toast = useToast();
+  // Suspend/reactivate are compliance actions restricted to Safety
+  // Officer/Admin on the backend (403 for anyone else) — hide the
+  // buttons entirely for other roles rather than let them click into
+  // a failed request.
+  const canManageCompliance = user?.role === ROLES.SAFETY_OFFICER || user?.role === ROLES.ADMIN;
 
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
@@ -64,8 +72,14 @@ export default function Drivers() {
   const [editingDriver, setEditingDriver] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Kept as "deleteTarget"/"deleting" internally to minimize the diff —
+  // only the user-facing labels below actually changed. This action now
+  // suspends the driver (POST /drivers/{id}/suspend), not a real delete —
+  // see the note in services/driver.js.
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+
+  const [reactivatingId, setReactivatingId] = useState(null);
 
   const fetchDrivers = useCallback(async () => {
     setLoading(true);
@@ -122,13 +136,28 @@ export default function Drivers() {
     setDeleting(true);
     try {
       await driverService.remove(deleteTarget.id);
-      toast.success(`${deleteTarget.name} removed from the roster.`);
+      toast.success(`${deleteTarget.name} has been suspended.`);
       setDeleteTarget(null);
       fetchDrivers();
     } catch (err) {
-      toast.error(err.message || "Couldn't remove this driver.");
+      toast.error(err.message || "Couldn't suspend this driver.");
     } finally {
       setDeleting(false);
+    }
+  };
+
+  // No confirmation dialog here — reactivating isn't destructive, so a
+  // direct action (with a per-row loading state) is enough friction.
+  const handleReactivate = async (driver) => {
+    setReactivatingId(driver.id);
+    try {
+      await driverService.reactivate(driver.id);
+      toast.success(`${driver.name} has been reactivated.`);
+      fetchDrivers();
+    } catch (err) {
+      toast.error(err.message || "Couldn't reactivate this driver.");
+    } finally {
+      setReactivatingId(null);
     }
   };
 
@@ -165,24 +194,49 @@ export default function Drivers() {
       key: "actions",
       label: "",
       align: "right",
-      render: (d) => (
-        <div className="flex items-center justify-end gap-1">
-          <button
-            onClick={() => openEdit(d)}
-            aria-label={`Edit ${d.name}`}
-            className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-ink-faint)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)]"
-          >
-            <FiEdit2 className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={() => setDeleteTarget(d)}
-            aria-label={`Remove ${d.name}`}
-            className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-ink-faint)] hover:bg-[var(--color-status-danger-soft)] hover:text-[var(--color-status-danger)]"
-          >
-            <FiTrash2 className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      ),
+      render: (d) => {
+        const alreadySuspended = d.status === DRIVER_STATUS.SUSPENDED;
+
+        if (alreadySuspended) {
+          return (
+            <div className="flex items-center justify-end gap-1">
+              {canManageCompliance && (
+                <button
+                  onClick={() => handleReactivate(d)}
+                  disabled={reactivatingId === d.id}
+                  aria-label={`Reactivate ${d.name}`}
+                  title="Reactivate"
+                  className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-ink-faint)] hover:bg-[var(--color-status-available-soft)] hover:text-[var(--color-status-available)] disabled:opacity-50"
+                >
+                  <FiUserCheck className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          );
+        }
+
+        return (
+          <div className="flex items-center justify-end gap-1">
+            <button
+              onClick={() => openEdit(d)}
+              aria-label={`Edit ${d.name}`}
+              className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-ink-faint)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)]"
+            >
+              <FiEdit2 className="h-3.5 w-3.5" />
+            </button>
+            {canManageCompliance && (
+              <button
+                onClick={() => setDeleteTarget(d)}
+                aria-label={`Suspend ${d.name}`}
+                title="Suspend"
+                className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-ink-faint)] hover:bg-[var(--color-status-danger-soft)] hover:text-[var(--color-status-danger)]"
+              >
+                <FiUserX className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        );
+      },
     },
   ];
 
@@ -231,13 +285,13 @@ export default function Drivers() {
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
-        title="Remove this driver?"
+        title="Suspend this driver?"
         description={
           deleteTarget
-            ? `${deleteTarget.name} (${deleteTarget.licenseNumber}) will be permanently removed from the roster. This can't be undone.`
+            ? `${deleteTarget.name} (${deleteTarget.licenseNumber}) will be marked Suspended and won't be assignable to trips until reactivated. Their record stays in the roster.`
             : ""
         }
-        confirmLabel="Remove driver"
+        confirmLabel="Suspend driver"
         loading={deleting}
       />
     </div>

@@ -10,9 +10,7 @@ import EmptyState from "../components/ui/EmptyState";
 import ConfirmationDialog from "../components/ui/ConfirmationDialog";
 import TripFormModal from "../components/trips/TripFormModal";
 import CompleteTripModal from "../components/trips/CompleteTripModal";
-import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
-import { ROLES } from "../constants/roles";
 import { TRIP_STATUS } from "../constants/status";
 import { getTrips, createTrip, dispatchTrip, completeTrip, cancelTrip } from "../services/trip";
 
@@ -23,15 +21,12 @@ const STATUS_OPTIONS = [
   ...Object.values(TRIP_STATUS).map((s) => ({ value: s, label: s })),
 ];
 
-// NOTE: isDriver is currently always false — the backend's role set has no
-// "driver" role (it uses "dispatcher" instead, which has full trip access,
-// not the restricted/own-trips-only view this used to gate). Worth revisiting
-// src/constants/roles.js separately; not touched here since that file wasn't
-// part of this pass.
+// Anyone who reaches this page already has trip-management access —
+// gated at the route level via ROUTE_ACCESS.trips in constants/roles.js
+// (dispatcher/fleet_manager/admin only). No further role-based hiding
+// needed here.
 export default function Trips() {
-  const { user } = useAuth();
   const toast = useToast();
-  const isDriver = user?.role === ROLES.DRIVER;
 
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -78,7 +73,6 @@ export default function Trips() {
     const q = search.trim().toLowerCase();
 
     let rows = trips.filter((t) => {
-      if (isDriver && t.driverId !== user?.id) return false;
       if (statusFilter !== "all" && t.status !== statusFilter) return false;
       if (!q) return true;
       return (
@@ -99,7 +93,7 @@ export default function Trips() {
 
     return rows;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trips, search, statusFilter, sortBy, sortDir, isDriver, user?.id]);
+  }, [trips, search, statusFilter, sortBy, sortDir]);
 
   const paged = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE;
@@ -198,50 +192,46 @@ export default function Trips() {
     { key: "driverLabel", label: "Driver", render: (r) => r.driverLabel },
     { key: "distanceKm", label: "Distance", align: "right", sortable: true, render: (r) => `${r.distanceKm} km` },
     { key: "status", label: "Status", render: (r) => <StatusBadge value={r.status} /> },
-    ...(isDriver
-      ? []
-      : [
-          {
-            key: "actions",
-            label: "",
-            align: "right",
-            render: (r) => (
-              <div className="flex justify-end gap-1.5">
-                {r.status === TRIP_STATUS.DRAFT && (
-                  <button
-                    onClick={() => handleDispatch(r)}
-                    disabled={dispatchingId === r.id}
-                    aria-label="Dispatch trip"
-                    title="Dispatch"
-                    className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-ink-faint)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)] disabled:opacity-50"
-                  >
-                    <FiFlag className="h-3.5 w-3.5" />
-                  </button>
-                )}
-                {r.status === TRIP_STATUS.DISPATCHED && (
-                  <button
-                    onClick={() => setCompleteTarget(r)}
-                    aria-label="Complete trip"
-                    title="Complete"
-                    className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-ink-faint)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)]"
-                  >
-                    <FiCheck className="h-3.5 w-3.5" />
-                  </button>
-                )}
-                {(r.status === TRIP_STATUS.DRAFT || r.status === TRIP_STATUS.DISPATCHED) && (
-                  <button
-                    onClick={() => setCancelTarget(r)}
-                    aria-label="Cancel trip"
-                    title="Cancel"
-                    className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-ink-faint)] hover:bg-[var(--color-status-danger-soft)] hover:text-[var(--color-status-danger)]"
-                  >
-                    <FiX className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
-            ),
-          },
-        ]),
+    {
+      key: "actions",
+      label: "",
+      align: "right",
+      render: (r) => (
+        <div className="flex justify-end gap-1.5">
+          {r.status === TRIP_STATUS.DRAFT && (
+            <button
+              onClick={() => handleDispatch(r)}
+              disabled={dispatchingId === r.id}
+              aria-label="Dispatch trip"
+              title="Dispatch"
+              className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-ink-faint)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)] disabled:opacity-50"
+            >
+              <FiFlag className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {r.status === TRIP_STATUS.DISPATCHED && (
+            <button
+              onClick={() => setCompleteTarget(r)}
+              aria-label="Complete trip"
+              title="Complete"
+              className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-ink-faint)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)]"
+            >
+              <FiCheck className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {(r.status === TRIP_STATUS.DRAFT || r.status === TRIP_STATUS.DISPATCHED) && (
+            <button
+              onClick={() => setCancelTarget(r)}
+              aria-label="Cancel trip"
+              title="Cancel"
+              className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-ink-faint)] hover:bg-[var(--color-status-danger-soft)] hover:text-[var(--color-status-danger)]"
+            >
+              <FiX className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -251,11 +241,9 @@ export default function Trips() {
           <SearchBar value={search} onChange={setSearch} placeholder="Search by route, vehicle, driver…" />
           <FilterDropdown label="Status" options={STATUS_OPTIONS} value={statusFilter} onChange={setStatusFilter} />
         </div>
-        {!isDriver && (
-          <Button variant="signal" size="md" icon={FiPlus} onClick={openCreate}>
-            Schedule trip
-          </Button>
-        )}
+        <Button variant="signal" size="md" icon={FiPlus} onClick={openCreate}>
+          Schedule trip
+        </Button>
       </div>
 
       <DataTable
@@ -269,17 +257,11 @@ export default function Trips() {
           <EmptyState
             icon={FiMap}
             title="No trips found"
-            description={
-              isDriver
-                ? "You don't have any trips matching these filters."
-                : "Try adjusting your search or filters, or schedule a new trip."
-            }
+            description="Try adjusting your search or filters, or schedule a new trip."
             action={
-              !isDriver && (
-                <Button variant="signal" size="sm" icon={FiPlus} onClick={openCreate}>
-                  Schedule trip
-                </Button>
-              )
+              <Button variant="signal" size="sm" icon={FiPlus} onClick={openCreate}>
+                Schedule trip
+              </Button>
             }
           />
         }
@@ -287,34 +269,30 @@ export default function Trips() {
 
       <Pagination page={page} pageSize={PAGE_SIZE} total={filteredSorted.length} onPageChange={setPage} />
 
-      {!isDriver && (
-        <>
-          <TripFormModal
-            open={modalOpen}
-            onClose={() => setModalOpen(false)}
-            onSubmit={handleSubmit}
-            submitting={submitting}
-          />
+      <TripFormModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onSubmit={handleSubmit}
+        submitting={submitting}
+      />
 
-          <CompleteTripModal
-            open={!!completeTarget}
-            onClose={() => setCompleteTarget(null)}
-            onSubmit={handleComplete}
-            trip={completeTarget}
-            submitting={completing}
-          />
+      <CompleteTripModal
+        open={!!completeTarget}
+        onClose={() => setCompleteTarget(null)}
+        onSubmit={handleComplete}
+        trip={completeTarget}
+        submitting={completing}
+      />
 
-          <ConfirmationDialog
-            open={!!cancelTarget}
-            onClose={() => setCancelTarget(null)}
-            onConfirm={handleCancel}
-            title="Cancel this trip?"
-            description={cancelTarget ? `${cancelTarget.origin} → ${cancelTarget.destination} will be cancelled.` : ""}
-            confirmLabel="Cancel trip"
-            loading={cancelling}
-          />
-        </>
-      )}
+      <ConfirmationDialog
+        open={!!cancelTarget}
+        onClose={() => setCancelTarget(null)}
+        onConfirm={handleCancel}
+        title="Cancel this trip?"
+        description={cancelTarget ? `${cancelTarget.origin} → ${cancelTarget.destination} will be cancelled.` : ""}
+        confirmLabel="Cancel trip"
+        loading={cancelling}
+      />
     </div>
   );
 }
