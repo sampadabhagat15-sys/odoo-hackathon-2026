@@ -1,126 +1,81 @@
-import { getAssignableVehicles, getAssignableDrivers } from "./trip";
+import api, { mockDelay } from "./api";
+import { getAssignableVehicles } from "./trip";
 
-const DELAY_MS = 400;
-function delay(value) {
-  return new Promise((resolve) => setTimeout(() => resolve(value), DELAY_MS));
+// Flip to true to fall back to mock data for offline/demo use.
+const USE_MOCKS = false;
+
+function vehicleLabel(vehicleId, vehicles) {
+  const v = vehicles.find((x) => x.id === vehicleId);
+  return v ? `${v.name} · ${v.registrationNumber}` : "—";
 }
 
-function generateLogCode(index) {
-  return `FL-${String(3000 + index)}`;
+// backend snake_case -> frontend camelCase
+function fromBackend(f) {
+  return {
+    id: f.id,
+    vehicleId: f.vehicle_id,
+    tripId: f.trip_id,
+    quantityLiters: f.liters,
+    totalCost: f.cost,
+    fuelDate: f.date,
+  };
 }
 
-let logs = [
+let mockLogs = [
   {
     id: "f-1",
-    logCode: generateLogCode(1),
     vehicleId: "v-1",
-    driverId: "d-1",
-    fuelType: "Diesel",
+    tripId: null,
     quantityLiters: 45,
-    costPerLiter: 92.5,
-    odometerKm: 10120,
-    station: "Indian Oil, NH8 Delhi",
+    totalCost: 4162.5,
     fuelDate: "2026-07-10",
   },
   {
     id: "f-2",
-    logCode: generateLogCode(2),
     vehicleId: "v-2",
-    driverId: "d-4",
-    fuelType: "Diesel",
+    tripId: null,
     quantityLiters: 38,
-    costPerLiter: 91.8,
-    odometerKm: 45210,
-    station: "HP Petrol Pump, Pune",
+    totalCost: 3488.4,
     fuelDate: "2026-07-09",
-  },
-  {
-    id: "f-3",
-    logCode: generateLogCode(3),
-    vehicleId: "v-3",
-    driverId: "d-2",
-    fuelType: "CNG",
-    quantityLiters: 22,
-    costPerLiter: 78.2,
-    odometerKm: 61830,
-    station: "IGL CNG Station, Bengaluru",
-    fuelDate: "2026-07-11",
-  },
-  {
-    id: "f-4",
-    logCode: generateLogCode(4),
-    vehicleId: "v-4",
-    driverId: "d-3",
-    fuelType: "Diesel",
-    quantityLiters: 60,
-    costPerLiter: 93.1,
-    odometerKm: 78940,
-    station: "Bharat Petroleum, Jaipur",
-    fuelDate: "2026-07-08",
-  },
-  {
-    id: "f-5",
-    logCode: generateLogCode(5),
-    vehicleId: "v-1",
-    driverId: "d-1",
-    fuelType: "Diesel",
-    quantityLiters: 40,
-    costPerLiter: 92.0,
-    odometerKm: 9500,
-    station: "Indian Oil, NH8 Delhi",
-    fuelDate: "2026-06-25",
   },
 ];
 
-async function labels(vehicleId, driverId) {
-  const [vehicles, drivers] = await Promise.all([getAssignableVehicles(), getAssignableDrivers()]);
-  const v = vehicles.find((x) => x.id === vehicleId);
-  const d = drivers.find((x) => x.id === driverId);
-  return {
-    vehicleLabel: v ? `${v.name} · ${v.registrationNumber}` : "—",
-    driverLabel: d ? d.name : "—",
-  };
-}
-
-function withTotal(log) {
-  return { ...log, totalCost: Math.round(log.quantityLiters * log.costPerLiter) };
-}
-
-async function withLabels(log) {
-  const l = await labels(log.vehicleId, log.driverId);
-  return { ...withTotal(log), ...l };
-}
-
 export async function getFuelLogs() {
-  const enriched = await Promise.all(logs.map(withLabels));
-  return delay(enriched);
+  if (USE_MOCKS) {
+    const vehicles = await getAssignableVehicles(true);
+    await mockDelay(400);
+    return mockLogs.map((l) => ({ ...l, vehicleLabel: vehicleLabel(l.vehicleId, vehicles) }));
+  }
+
+  const { data } = await api.get("/fuel-logs");
+  const logs = data.data.map(fromBackend);
+  const vehicles = await getAssignableVehicles(true);
+  return logs.map((l) => ({ ...l, vehicleLabel: vehicleLabel(l.vehicleId, vehicles) }));
 }
 
 export async function getFuelVehicles() {
-  return getAssignableVehicles();
+  // Any vehicle can have fuel logged against it regardless of current
+  // status (unlike Trips/Maintenance, there's no "must be Available"
+  // rule here) — so this intentionally fetches ALL vehicles, not just
+  // Available ones.
+  return getAssignableVehicles(true);
 }
 
-export async function getFuelDrivers() {
-  return getAssignableDrivers();
-}
-
+// payload: { vehicleId, quantityLiters, totalCost, fuelDate }
+// No update or delete — the backend only supports create + list for
+// fuel logs, no editing or removing an entry once logged.
 export async function createFuelLog(payload) {
-  const log = {
-    id: `f-${Date.now()}`,
-    logCode: generateLogCode(logs.length + 1),
-    ...payload,
-  };
-  logs = [log, ...logs];
-  return delay(await withLabels(log));
-}
+  if (USE_MOCKS) {
+    const log = { id: `f-${Date.now()}`, tripId: null, ...payload };
+    mockLogs = [log, ...mockLogs];
+    return mockDelay(log);
+  }
 
-export async function updateFuelLog(id, payload) {
-  logs = logs.map((l) => (l.id === id ? { ...l, ...payload } : l));
-  const updated = logs.find((l) => l.id === id);
-  return delay(await withLabels(updated));
-}
-
-export async function deleteFuelLog(id) {
-  logs = logs.filter((l) => l.id !== id);
-  return delay({ id });
+  const { data } = await api.post("/fuel-logs", {
+    vehicle_id: payload.vehicleId,
+    liters: payload.quantityLiters,
+    cost: payload.totalCost,
+    date: payload.fuelDate,
+  });
+  return fromBackend(data.data);
 }
