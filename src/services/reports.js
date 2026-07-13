@@ -1,14 +1,17 @@
+import api from "./api";
 import { getTrips, getAssignableVehicles } from "./trip";
 import { getFuelLogs } from "./fuel";
 import { getMaintenanceRecords } from "./maintenance";
-import { getExpenses, getExpenseTotalsByVehicle } from "./expense";
+import { getExpenses } from "./expense";
 import { TRIP_STATUS, EXPENSE_STATUS } from "../constants/status";
 
-// This file only aggregates data that fuel.js / maintenance.js / trip.js /
-// expense.js already return — no new business rules are invented here.
-// When a real /reports API exists, these functions get replaced with plain
-// Axios calls; every consumer (Reports.jsx) keeps working unchanged as long
-// as the return shapes below are preserved.
+// This file aggregates data that trip.js / fuel.js / maintenance.js /
+// expense.js already return from the real backend — no new API calls of
+// its own, no new business rules invented here. Every date field below
+// matches what those services actually return (see the fixes noted
+// inline — a few field names changed when those services were wired
+// to the real backend and some fields, like a trip's plain "departure
+// date", don't exist there at all).
 
 const DELAY_MS = 400;
 function delay(value) {
@@ -20,6 +23,14 @@ function inRange(dateStr, from, to) {
   if (from && dateStr < from) return false;
   if (to && dateStr > to) return false;
   return true;
+}
+
+// Trips have no plain "departure date" field on the real backend (only
+// created_at / dispatched_at / completed_at / cancelled_at timestamps).
+// createdAt is the one universal field every trip has regardless of
+// status, so it's used as the date to filter/group trips by.
+function tripDateKey(trip) {
+  return trip.createdAt ? trip.createdAt.slice(0, 10) : null; // "2026-07-13"
 }
 
 /**
@@ -36,10 +47,10 @@ export async function getReportsSummary(filters = {}) {
     getExpenses(),
   ]);
 
-  const filteredTrips = trips.filter((t) => inRange(t.departureDate, from, to));
+  const filteredTrips = trips.filter((t) => inRange(tripDateKey(t), from, to));
   const filteredFuel = fuelLogs.filter((f) => inRange(f.fuelDate, from, to));
   const filteredMaintenance = maintenanceRecords.filter((m) =>
-    inRange(m.scheduledDate, from, to)
+    inRange(m.startDate, from, to)
   );
   const filteredExpenses = expenses.filter((e) => inRange(e.date, from, to));
 
@@ -78,7 +89,7 @@ export async function getReportsSummary(filters = {}) {
 export async function getTripStatusBreakdown(filters = {}) {
   const { from = null, to = null } = filters;
   const trips = await getTrips();
-  const filtered = trips.filter((t) => inRange(t.departureDate, from, to));
+  const filtered = trips.filter((t) => inRange(tripDateKey(t), from, to));
 
   const counts = {};
   Object.values(TRIP_STATUS).forEach((status) => {
@@ -122,7 +133,7 @@ export async function getMonthlyCostTrend() {
     buckets[key].fuel += f.totalCost || 0;
   });
   maintenanceRecords.forEach((m) => {
-    const key = monthKey(m.scheduledDate);
+    const key = monthKey(m.startDate);
     if (!key) return;
     buckets[key] = buckets[key] || { fuel: 0, maintenance: 0 };
     buckets[key].maintenance += m.cost || 0;
@@ -147,12 +158,19 @@ export async function getMonthlyCostTrend() {
  *             expenseCost, totalCost }]
  */
 export async function getCostByVehicle() {
-  const [fuelLogs, maintenanceRecords, vehicles, expenseTotals] = await Promise.all([
+  // true = ALL vehicles, not just Available ones — a vehicle currently
+  // On Trip or In Shop still needs to show up in a cost report. (The
+  // no-arg default only fetches Available vehicles, which was a real
+  // bug: any vehicle mid-trip or mid-maintenance would silently vanish
+  // from this exact report.)
+  const [fuelLogs, maintenanceRecords, vehicles, expenses] = await Promise.all([
     getFuelLogs(),
     getMaintenanceRecords(),
-    getAssignableVehicles(),
-    getExpenseTotalsByVehicle(),
+    getAssignableVehicles(true),
+    getExpenses(),
   ]);
+
+  const nonRejectedExpenses = expenses.filter((e) => e.status !== EXPENSE_STATUS.REJECTED);
 
   const rows = vehicles.map((v) => {
     const fuelCost = fuelLogs
@@ -161,9 +179,9 @@ export async function getCostByVehicle() {
     const maintenanceCost = maintenanceRecords
       .filter((m) => m.vehicleId === v.id)
       .reduce((sum, m) => sum + (m.cost || 0), 0);
-    // expenseTotals is keyed by expense.js's vehicleId ("veh_1" style) —
-    // will read as 0 until those ids match trip.js's ("v-1" style).
-    const expenseCost = expenseTotals[v.id] || 0;
+    const expenseCost = nonRejectedExpenses
+      .filter((e) => e.vehicleId === v.id)
+      .reduce((sum, e) => sum + (e.amount || 0), 0);
 
     return {
       vehicleId: v.id,
@@ -176,4 +194,24 @@ export async function getCostByVehicle() {
   });
 
   return delay(rows.sort((a, b) => b.totalCost - a.totalCost));
+}
+
+/**
+ * Downloads the fleet report as a CSV file. Unlike everything else in
+ * this file, this hits the real backend directly (GET /reports/fleet/csv)
+ * rather than aggregating client-side — the backend already computes and
+ * formats the exact same per-vehicle numbers as getCostByVehicle() above,
+ * just packaged as a file instead of JSON.
+ */
+export async function exportFleetReportCsv() {
+  const response = await api.get("/reports/fleet/csv", { responseType: "blob" });
+
+  const url = window.URL.createObjectURL(new Blob([response.data]));
+  const link = document.createElement("a");
+  link.href = url;
+  link.setAttribute("download", `fleet_report_${new Date().toISOString().slice(0, 10)}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
 }

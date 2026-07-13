@@ -6,6 +6,7 @@ import {
   FiTool,
   FiCreditCard,
   FiTrendingUp,
+  FiDownload,
 } from "react-icons/fi";
 import {
   PieChart,
@@ -25,19 +26,18 @@ import StatCard from "../components/ui/StatCard";
 import ChartCard from "../components/ui/ChartCard";
 import DataTable from "../components/ui/DataTable";
 import FilterDropdown from "../components/ui/FilterDropdown";
+import Button from "../components/ui/Button";
 import EmptyState from "../components/ui/EmptyState";
 import { PageLoader, TableSkeleton } from "../components/ui/Loader";
+import { useToast } from "../context/ToastContext";
 import {
   getReportsSummary,
   getTripStatusBreakdown,
   getMonthlyCostTrend,
   getCostByVehicle,
+  exportFleetReportCsv,
 } from "../services/reports";
 import { STATUS_TONE } from "../constants/status";
-
-// NOTE on prop names: StatCard / ChartCard / FilterDropdown are used here
-// with the same prop shapes as on Dashboard.jsx. If your actual components
-// differ, only this file needs adjusting — no service changes required.
 
 const RANGE_OPTIONS = ["All Time", "This Month", "Last 30 Days", "Last 3 Months"];
 
@@ -65,7 +65,9 @@ function formatCurrency(value) {
 }
 
 export default function Reports() {
+  const toast = useToast();
   const [range, setRange] = useState("All Time");
+  const [exporting, setExporting] = useState(false);
 
   const [summary, setSummary] = useState(null);
   const [tripStatusData, setTripStatusData] = useState([]);
@@ -125,6 +127,18 @@ export default function Reports() {
     }
   }
 
+  async function handleExportCsv() {
+    setExporting(true);
+    try {
+      await exportFleetReportCsv();
+      toast.success("Fleet report downloaded.");
+    } catch {
+      toast.error("Couldn't export the report. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const columns = [
     { key: "vehicleLabel", label: "Vehicle", sortable: true },
     {
@@ -166,6 +180,9 @@ export default function Reports() {
           options={RANGE_OPTIONS}
           onChange={setRange}
         />
+        <Button variant="outline" size="md" icon={FiDownload} onClick={handleExportCsv} loading={exporting}>
+          Export CSV
+        </Button>
       </div>
 
       {loadingSummary || !summary ? (
