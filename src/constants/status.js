@@ -19,11 +19,13 @@ export const TRIP_STATUS = {
   CANCELLED: "Cancelled",
 };
 
+// Backend only has two maintenance states (Active/Closed) — the previous
+// four-state model (Scheduled/In Progress/Completed/Overdue) had no real
+// data behind it. "Active" covers the whole "vehicle is in the shop right
+// now" period; "Closed" means the vehicle's back to Available.
 export const MAINTENANCE_STATUS = {
-  SCHEDULED: "Scheduled",
-  IN_PROGRESS: "In Progress",
-  COMPLETED: "Completed",
-  OVERDUE: "Overdue",
+  ACTIVE: "Active",
+  CLOSED: "Closed",
 };
 
 export const EXPENSE_STATUS = {
@@ -45,10 +47,8 @@ export const STATUS_TONE = {
   [TRIP_STATUS.DISPATCHED]: "ontrip",
   [TRIP_STATUS.COMPLETED]: "available",
   [TRIP_STATUS.CANCELLED]: "danger",
-  [MAINTENANCE_STATUS.SCHEDULED]: "retired",
-  [MAINTENANCE_STATUS.IN_PROGRESS]: "ontrip",
-  [MAINTENANCE_STATUS.COMPLETED]: "available",
-  [MAINTENANCE_STATUS.OVERDUE]: "danger",
+  [MAINTENANCE_STATUS.ACTIVE]: "ontrip",
+  [MAINTENANCE_STATUS.CLOSED]: "available",
   [EXPENSE_STATUS.PENDING]: "shop",
   [EXPENSE_STATUS.APPROVED]: "available",
   [EXPENSE_STATUS.REJECTED]: "danger",
