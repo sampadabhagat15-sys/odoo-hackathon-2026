@@ -2,9 +2,7 @@ import api, { mockDelay } from "./api";
 import { VEHICLE_STATUS } from "../constants/status";
 import { VEHICLE_TYPES } from "../constants/vehicle";
 
-// Flip to false once the real /vehicles endpoints exist. Every function
-// below already matches the shape a REST API would use, so that's the only
-// change needed — no component code changes.
+// Flip to true to fall back to mock data for offline/demo use.
 const USE_MOCKS = false;
 
 const NAMES = [
@@ -60,6 +58,35 @@ function sortList(list, sortBy, sortDir) {
   });
 }
 
+// backend snake_case -> frontend camelCase
+function fromBackend(v) {
+  return {
+    id: v.id,
+    registrationNumber: v.registration_number,
+    name: v.name,
+    type: v.type,
+    maxLoadCapacityKg: v.max_load_capacity,
+    odometerKm: v.odometer,
+    acquisitionCost: v.acquisition_cost,
+    status: v.status,
+    region: v.region,
+  };
+}
+
+// frontend camelCase -> backend snake_case, for create/update payloads
+function toBackend(payload) {
+  return {
+    registration_number: payload.registrationNumber,
+    name: payload.name,
+    type: payload.type,
+    max_load_capacity: payload.maxLoadCapacityKg,
+    odometer: payload.odometerKm,
+    acquisition_cost: payload.acquisitionCost,
+    status: payload.status,
+    region: payload.region,
+  };
+}
+
 async function getAll({ search = "", status = "all", type = "all", sortBy = "registrationNumber", sortDir = "asc", page = 1, pageSize = 8 } = {}) {
   if (USE_MOCKS) {
     await mockDelay(400);
@@ -80,8 +107,29 @@ async function getAll({ search = "", status = "all", type = "all", sortBy = "reg
 
     return { items, total, page, pageSize };
   }
-  const { data } = await api.get("/vehicles", { params: { search, status, type, sortBy, sortDir, page, pageSize } });
-  return data;
+
+  // Backend only supports type, status_filter, region as query params —
+  // no search, no sortBy, no pagination. Fetch the (type/status-filtered)
+  // list, then do search + sort + pagination client-side, same as mock.
+  const params = {};
+  if (type !== "all") params.type = type;
+  if (status !== "all") params.status_filter = status;
+
+  const { data } = await api.get("/vehicles", { params });
+  let list = data.data.map(fromBackend);
+
+  if (search.trim()) {
+    const q = search.trim().toLowerCase();
+    list = list.filter(
+      (v) => v.registrationNumber.toLowerCase().includes(q) || v.name.toLowerCase().includes(q)
+    );
+  }
+
+  list = sortList(list, sortBy, sortDir);
+  const total = list.length;
+  const items = paginate(list, page, pageSize);
+
+  return { items, total, page, pageSize };
 }
 
 async function create(payload) {
@@ -99,8 +147,8 @@ async function create(payload) {
     MOCK_VEHICLES = [vehicle, ...MOCK_VEHICLES];
     return vehicle;
   }
-  const { data } = await api.post("/vehicles", payload);
-  return data;
+  const { data } = await api.post("/vehicles", toBackend(payload));
+  return fromBackend(data.data);
 }
 
 async function update(id, payload) {
@@ -117,8 +165,8 @@ async function update(id, payload) {
     MOCK_VEHICLES = MOCK_VEHICLES.map((v) => (v.id === id ? { ...v, ...payload } : v));
     return MOCK_VEHICLES.find((v) => v.id === id);
   }
-  const { data } = await api.put(`/vehicles/${id}`, payload);
-  return data;
+  const { data } = await api.put(`/vehicles/${id}`, toBackend(payload));
+  return fromBackend(data.data);
 }
 
 async function remove(id) {

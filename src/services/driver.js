@@ -3,7 +3,7 @@ import { DRIVER_STATUS } from "../constants/status";
 import { LICENSE_CATEGORIES } from "../constants/driver";
 import { isPast } from "../utils/date";
 
-// Flip to false once the real /drivers endpoints exist.
+// Flip to true to fall back to mock data for offline/demo use.
 const USE_MOCKS = false;
 
 const FIRST_NAMES = [
@@ -21,7 +21,6 @@ function randomPhone(i) {
 }
 
 function licenseExpiry(i) {
-  // Spread expiries: some already expired, some expiring soon, most valid for years.
   const offsets = [-40, -10, 15, 45, 180, 365, 730, 1095];
   const days = offsets[i % offsets.length];
   const d = new Date();
@@ -66,6 +65,33 @@ function sortList(list, sortBy, sortDir) {
   });
 }
 
+// backend snake_case -> frontend camelCase
+function fromBackend(d) {
+  return {
+    id: d.id,
+    name: d.name,
+    licenseNumber: d.license_number,
+    licenseCategory: d.license_category,
+    licenseExpiry: d.license_expiry_date,
+    contactNumber: d.contact_number,
+    safetyScore: d.safety_score,
+    status: d.status,
+  };
+}
+
+// frontend camelCase -> backend snake_case, for create/update payloads
+function toBackend(payload) {
+  return {
+    name: payload.name,
+    license_number: payload.licenseNumber,
+    license_category: payload.licenseCategory,
+    license_expiry_date: payload.licenseExpiry,
+    contact_number: payload.contactNumber,
+    safety_score: payload.safetyScore,
+    status: payload.status,
+  };
+}
+
 async function getAll({ search = "", status = "all", license = "all", sortBy = "name", sortDir = "asc", page = 1, pageSize = 8 } = {}) {
   if (USE_MOCKS) {
     await mockDelay(400);
@@ -84,8 +110,27 @@ async function getAll({ search = "", status = "all", license = "all", sortBy = "
 
     return { items, total, page, pageSize };
   }
-  const { data } = await api.get("/drivers", { params: { search, status, license, sortBy, sortDir, page, pageSize } });
-  return data;
+
+  // Backend only supports status_filter — no search, license, sortBy, or
+  // pagination params. Fetch the (status-filtered) list, then do search +
+  // license filter + sort + pagination client-side, same as mock.
+  const params = {};
+  if (status !== "all") params.status_filter = status;
+
+  const { data } = await api.get("/drivers", { params });
+  let list = data.data.map(fromBackend);
+
+  if (search.trim()) {
+    const q = search.trim().toLowerCase();
+    list = list.filter((d) => d.name.toLowerCase().includes(q) || d.licenseNumber.toLowerCase().includes(q));
+  }
+  if (license !== "all") list = list.filter((d) => d.licenseCategory === license);
+
+  list = sortList(list, sortBy, sortDir);
+  const total = list.length;
+  const items = paginate(list, page, pageSize);
+
+  return { items, total, page, pageSize };
 }
 
 async function create(payload) {
@@ -101,8 +146,8 @@ async function create(payload) {
     MOCK_DRIVERS = [driver, ...MOCK_DRIVERS];
     return driver;
   }
-  const { data } = await api.post("/drivers", payload);
-  return data;
+  const { data } = await api.post("/drivers", toBackend(payload));
+  return fromBackend(data.data);
 }
 
 async function update(id, payload) {
@@ -119,24 +164,32 @@ async function update(id, payload) {
     MOCK_DRIVERS = MOCK_DRIVERS.map((d) => (d.id === id ? { ...d, ...payload } : d));
     return MOCK_DRIVERS.find((d) => d.id === id);
   }
-  const { data } = await api.put(`/drivers/${id}`, payload);
-  return data;
+  const { data } = await api.put(`/drivers/${id}`, toBackend(payload));
+  return fromBackend(data.data);
 }
 
+// NOTE: the backend has no DELETE /drivers/{id} — only POST
+// /drivers/{id}/suspend, which sets status to Suspended rather than
+// actually removing the record. Kept the exported name "remove" so any
+// existing "Delete" button in Drivers.jsx keeps working without changes,
+// but real-mode it now suspends instead of deleting. Consider relabeling
+// that button "Suspend" in the UI so it doesn't imply permanent removal.
 async function remove(id) {
   if (USE_MOCKS) {
     await mockDelay(350);
     MOCK_DRIVERS = MOCK_DRIVERS.filter((d) => d.id !== id);
     return { success: true };
   }
-  const { data } = await api.delete(`/drivers/${id}`);
-  return data;
+  const { data } = await api.post(`/drivers/${id}/suspend`);
+  return fromBackend(data.data);
 }
 
-// Convenience used by Trip Management later: only drivers eligible for dispatch
-// (Available, valid license). Kept here since it's a driver-data concern.
+// Explicit alias, in case Drivers.jsx gets updated to call this directly
+// instead of the repurposed remove().
+const suspend = remove;
+
 function isEligibleForDispatch(driver) {
   return driver.status === DRIVER_STATUS.AVAILABLE && !isPast(driver.licenseExpiry);
 }
 
-export default { getAll, create, update, remove, isEligibleForDispatch };
+export default { getAll, create, update, remove, suspend, isEligibleForDispatch };
