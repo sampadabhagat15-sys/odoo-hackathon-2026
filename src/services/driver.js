@@ -4,7 +4,7 @@ import { LICENSE_CATEGORIES } from "../constants/driver";
 import { isPast } from "../utils/date";
 
 // Flip to false once the real /drivers endpoints exist.
-const USE_MOCKS = true;
+const USE_MOCKS = false;
 
 const FIRST_NAMES = [
   "Alex", "Priya", "Rahul", "Sneha", "Karan", "Meera", "Arjun", "Divya",

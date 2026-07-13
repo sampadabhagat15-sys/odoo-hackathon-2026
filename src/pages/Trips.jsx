@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FiMap, FiPlus, FiEdit2, FiTrash2 } from "react-icons/fi";
+import { FiMap, FiPlus, FiCheck, FiFlag, FiX } from "react-icons/fi";
 import DataTable from "../components/ui/DataTable";
 import SearchBar from "../components/ui/SearchBar";
 import FilterDropdown from "../components/ui/FilterDropdown";
@@ -9,13 +9,12 @@ import StatusBadge from "../components/ui/StatusBadge";
 import EmptyState from "../components/ui/EmptyState";
 import ConfirmationDialog from "../components/ui/ConfirmationDialog";
 import TripFormModal from "../components/trips/TripFormModal";
+import CompleteTripModal from "../components/trips/CompleteTripModal";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { ROLES } from "../constants/roles";
 import { TRIP_STATUS } from "../constants/status";
-import { REGIONS } from "../constants/trip";
-import { formatDate } from "../utils/date";
-import { getTrips, createTrip, updateTrip, deleteTrip } from "../services/trip";
+import { getTrips, createTrip, dispatchTrip, completeTrip, cancelTrip } from "../services/trip";
 
 const PAGE_SIZE = 8;
 
@@ -24,11 +23,11 @@ const STATUS_OPTIONS = [
   ...Object.values(TRIP_STATUS).map((s) => ({ value: s, label: s })),
 ];
 
-const REGION_OPTIONS = [
-  { value: "all", label: "All regions" },
-  ...REGIONS.map((r) => ({ value: r, label: r })),
-];
-
+// NOTE: isDriver is currently always false — the backend's role set has no
+// "driver" role (it uses "dispatcher" instead, which has full trip access,
+// not the restricted/own-trips-only view this used to gate). Worth revisiting
+// src/constants/roles.js separately; not touched here since that file wasn't
+// part of this pass.
 export default function Trips() {
   const { user } = useAuth();
   const toast = useToast();
@@ -39,17 +38,20 @@ export default function Trips() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [regionFilter, setRegionFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("departureDate");
+  const [sortBy, setSortBy] = useState("createdAt");
   const [sortDir, setSortDir] = useState("desc");
   const [page, setPage] = useState(1);
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingTrip, setEditingTrip] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [deleting, setDeleting] = useState(false);
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelling, setCancelling] = useState(false);
+
+  const [completeTarget, setCompleteTarget] = useState(null);
+  const [completing, setCompleting] = useState(false);
+
+  const [dispatchingId, setDispatchingId] = useState(null);
 
   async function loadTrips() {
     setLoading(true);
@@ -70,7 +72,7 @@ export default function Trips() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter, regionFilter]);
+  }, [search, statusFilter]);
 
   const filteredSorted = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -78,10 +80,8 @@ export default function Trips() {
     let rows = trips.filter((t) => {
       if (isDriver && t.driverId !== user?.id) return false;
       if (statusFilter !== "all" && t.status !== statusFilter) return false;
-      if (regionFilter !== "all" && t.region !== regionFilter) return false;
       if (!q) return true;
       return (
-        t.tripCode.toLowerCase().includes(q) ||
         t.origin.toLowerCase().includes(q) ||
         t.destination.toLowerCase().includes(q) ||
         t.vehicleLabel.toLowerCase().includes(q) ||
@@ -99,7 +99,7 @@ export default function Trips() {
 
     return rows;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trips, search, statusFilter, regionFilter, sortBy, sortDir, isDriver, user?.id]);
+  }, [trips, search, statusFilter, sortBy, sortDir, isDriver, user?.id]);
 
   const paged = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE;
@@ -116,51 +116,74 @@ export default function Trips() {
   }
 
   function openCreate() {
-    setEditingTrip(null);
-    setModalOpen(true);
-  }
-
-  function openEdit(trip) {
-    setEditingTrip(trip);
     setModalOpen(true);
   }
 
   async function handleSubmit(values) {
     setSubmitting(true);
     try {
-      if (editingTrip) {
-        await updateTrip(editingTrip.id, values);
-        toast.success(`${editingTrip.tripCode} updated.`);
-      } else {
-        const created = await createTrip(values);
-        toast.success(`${created.tripCode} scheduled.`);
-      }
+      const created = await createTrip(values);
+      toast.success(`Trip to ${created.destination} created as Draft.`);
       setModalOpen(false);
       await loadTrips();
     } catch {
-      toast.error("Couldn't save the trip. Please try again.");
+      toast.error("Couldn't create the trip. Please check the details and try again.");
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function handleDelete() {
-    if (!deleteTarget) return;
-    setDeleting(true);
+  async function handleDispatch(trip) {
+    setDispatchingId(trip.id);
     try {
-      await deleteTrip(deleteTarget.id);
-      toast.success(`${deleteTarget.tripCode} removed.`);
-      setDeleteTarget(null);
+      await dispatchTrip(trip.id);
+      toast.success("Trip dispatched.");
       await loadTrips();
-    } catch {
-      toast.error("Couldn't remove the trip. Please try again.");
+    } catch (err) {
+      // Backend returns a specific reason (vehicle/driver unavailable,
+      // expired license, etc.) — surface it instead of a generic message.
+      toast.error(err?.response?.data?.message || "Couldn't dispatch the trip.");
     } finally {
-      setDeleting(false);
+      setDispatchingId(null);
+    }
+  }
+
+  async function handleComplete(values) {
+    if (!completeTarget) return;
+    setCompleting(true);
+    try {
+      await completeTrip(completeTarget.id, values);
+      toast.success("Trip completed.");
+      setCompleteTarget(null);
+      await loadTrips();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Couldn't complete the trip.");
+    } finally {
+      setCompleting(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (!cancelTarget) return;
+    setCancelling(true);
+    try {
+      await cancelTrip(cancelTarget.id);
+      toast.success("Trip cancelled.");
+      setCancelTarget(null);
+      await loadTrips();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Couldn't cancel the trip.");
+    } finally {
+      setCancelling(false);
     }
   }
 
   const columns = [
-    { key: "tripCode", label: "Trip", sortable: true, render: (r) => <span className="font-[family-name:var(--font-mono)] text-xs font-medium">{r.tripCode}</span> },
+    {
+      key: "id",
+      label: "Trip",
+      render: (r) => <span className="font-[family-name:var(--font-mono)] text-xs font-medium">#{r.id.slice(0, 8)}</span>,
+    },
     {
       key: "origin",
       label: "Route",
@@ -173,7 +196,6 @@ export default function Trips() {
     },
     { key: "vehicleLabel", label: "Vehicle", render: (r) => r.vehicleLabel },
     { key: "driverLabel", label: "Driver", render: (r) => r.driverLabel },
-    { key: "departureDate", label: "Departure", sortable: true, render: (r) => formatDate(r.departureDate) },
     { key: "distanceKm", label: "Distance", align: "right", sortable: true, render: (r) => `${r.distanceKm} km` },
     { key: "status", label: "Status", render: (r) => <StatusBadge value={r.status} /> },
     ...(isDriver
@@ -185,20 +207,37 @@ export default function Trips() {
             align: "right",
             render: (r) => (
               <div className="flex justify-end gap-1.5">
-                <button
-                  onClick={() => openEdit(r)}
-                  aria-label={`Edit ${r.tripCode}`}
-                  className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-ink-faint)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)]"
-                >
-                  <FiEdit2 className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  onClick={() => setDeleteTarget(r)}
-                  aria-label={`Delete ${r.tripCode}`}
-                  className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-ink-faint)] hover:bg-[var(--color-status-danger-soft)] hover:text-[var(--color-status-danger)]"
-                >
-                  <FiTrash2 className="h-3.5 w-3.5" />
-                </button>
+                {r.status === TRIP_STATUS.DRAFT && (
+                  <button
+                    onClick={() => handleDispatch(r)}
+                    disabled={dispatchingId === r.id}
+                    aria-label="Dispatch trip"
+                    title="Dispatch"
+                    className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-ink-faint)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)] disabled:opacity-50"
+                  >
+                    <FiFlag className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                {r.status === TRIP_STATUS.DISPATCHED && (
+                  <button
+                    onClick={() => setCompleteTarget(r)}
+                    aria-label="Complete trip"
+                    title="Complete"
+                    className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-ink-faint)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)]"
+                  >
+                    <FiCheck className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                {(r.status === TRIP_STATUS.DRAFT || r.status === TRIP_STATUS.DISPATCHED) && (
+                  <button
+                    onClick={() => setCancelTarget(r)}
+                    aria-label="Cancel trip"
+                    title="Cancel"
+                    className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-ink-faint)] hover:bg-[var(--color-status-danger-soft)] hover:text-[var(--color-status-danger)]"
+                  >
+                    <FiX className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
             ),
           },
@@ -209,9 +248,8 @@ export default function Trips() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2.5">
-          <SearchBar value={search} onChange={setSearch} placeholder="Search by trip, route, vehicle, driver…" />
+          <SearchBar value={search} onChange={setSearch} placeholder="Search by route, vehicle, driver…" />
           <FilterDropdown label="Status" options={STATUS_OPTIONS} value={statusFilter} onChange={setStatusFilter} />
-          <FilterDropdown label="Region" options={REGION_OPTIONS} value={regionFilter} onChange={setRegionFilter} />
         </div>
         {!isDriver && (
           <Button variant="signal" size="md" icon={FiPlus} onClick={openCreate}>
@@ -255,18 +293,25 @@ export default function Trips() {
             open={modalOpen}
             onClose={() => setModalOpen(false)}
             onSubmit={handleSubmit}
-            trip={editingTrip}
             submitting={submitting}
           />
 
+          <CompleteTripModal
+            open={!!completeTarget}
+            onClose={() => setCompleteTarget(null)}
+            onSubmit={handleComplete}
+            trip={completeTarget}
+            submitting={completing}
+          />
+
           <ConfirmationDialog
-            open={!!deleteTarget}
-            onClose={() => setDeleteTarget(null)}
-            onConfirm={handleDelete}
-            title="Remove this trip?"
-            description={deleteTarget ? `${deleteTarget.tripCode} (${deleteTarget.origin} → ${deleteTarget.destination}) will be permanently removed.` : ""}
-            confirmLabel="Remove trip"
-            loading={deleting}
+            open={!!cancelTarget}
+            onClose={() => setCancelTarget(null)}
+            onConfirm={handleCancel}
+            title="Cancel this trip?"
+            description={cancelTarget ? `${cancelTarget.origin} → ${cancelTarget.destination} will be cancelled.` : ""}
+            confirmLabel="Cancel trip"
+            loading={cancelling}
           />
         </>
       )}

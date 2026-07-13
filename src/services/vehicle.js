@@ -5,7 +5,7 @@ import { VEHICLE_TYPES } from "../constants/vehicle";
 // Flip to false once the real /vehicles endpoints exist. Every function
 // below already matches the shape a REST API would use, so that's the only
 // change needed — no component code changes.
-const USE_MOCKS = true;
+const USE_MOCKS = false;
 
 const NAMES = [
   "Ashok Leyland Dost", "Tata Ace", "Mahindra Bolero Pickup", "Eicher Pro 2049",

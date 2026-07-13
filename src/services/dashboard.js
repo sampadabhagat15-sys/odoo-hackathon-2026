@@ -1,7 +1,10 @@
 import api, { mockDelay } from "./api";
 
-// Flip to false once GET /dashboard/kpis and /dashboard/charts exist.
-const USE_MOCKS = true;
+// KPIs are wired to the real backend below. Charts stay on mock data —
+// the backend has no /dashboard/charts endpoint (chart analytics is a
+// Bonus Feature per the spec, not a mandatory deliverable), so there's
+// nothing real to fetch yet. Revisit if there's time later.
+const USE_MOCKS = false;
 
 const MOCK_KPIS = {
   activeVehicles: 42,
@@ -48,14 +51,6 @@ const MOCK_OPERATIONAL_COST = [
   { month: "Jul", fuel: 198400, maintenance: 39000 },
 ];
 
-// --- Mock-only filter simulation -----------------------------------------
-// This block exists purely so the mock data visibly reacts to the Type /
-// Status / Region dropdowns during frontend development. It is NOT real
-// business logic — actual filtering belongs server-side, in the real
-// /dashboard/kpis and /dashboard/charts endpoints (see the `else` branches
-// below, which are untouched and already pass `filters` through as query
-// params). Delete this whole block once USE_MOCKS is flipped to false.
-
 const TYPE_FACTORS = { all: 1, truck: 0.42, van: 0.33, trailer: 0.25 };
 const REGION_FACTORS = { all: 1, north: 0.3, south: 0.24, east: 0.21, west: 0.25 };
 const STATUS_FACTORS = { all: 1, available: 0.64, on_trip: 0.43, in_shop: 0.12, retired: 0.07 };
@@ -79,7 +74,20 @@ function scaleCount(base, factor) {
 function scaleCurrency(base, factor) {
   return Math.max(0, Math.round((base * factor) / 100) * 100);
 }
-// --------------------------------------------------------------------------
+
+// Backend field names (snake_case) -> frontend field names (camelCase),
+// so nothing else in the app needs to change.
+function kpisFromBackend(k) {
+  return {
+    activeVehicles: k.active_vehicles,
+    availableVehicles: k.available_vehicles,
+    vehiclesInMaintenance: k.vehicles_in_maintenance,
+    activeTrips: k.active_trips,
+    pendingTrips: k.pending_trips,
+    driversOnDuty: k.drivers_on_duty,
+    fleetUtilization: k.fleet_utilization_percent,
+  };
+}
 
 async function getKpis(filters = {}) {
   if (USE_MOCKS) {
@@ -100,54 +108,56 @@ async function getKpis(filters = {}) {
       ),
     };
   }
-  const { data } = await api.get("/dashboard/kpis", { params: filters });
-  return data;
+  // Backend only supports `type` and `region` filters on KPIs (no status
+  // filter) — map only what it understands. Envelope unwrap: data.data.
+  const { data } = await api.get("/dashboard/kpis", {
+    params: { type: filters.vehicleType, region: filters.region },
+  });
+  return kpisFromBackend(data.data);
 }
 
+// Charts intentionally always use mock data for now — see note at top
+// of file. This function ignores USE_MOCKS on purpose.
 async function getCharts(filters = {}) {
-  if (USE_MOCKS) {
-    await mockDelay(450);
-    const factor = fleetScale(filters);
+  await mockDelay(450);
+  const factor = fleetScale(filters);
 
-    const tripsOverTime = MOCK_TRIPS_OVER_TIME.map((d) => ({
+  const tripsOverTime = MOCK_TRIPS_OVER_TIME.map((d) => ({
+    ...d,
+    trips: scaleCount(d.trips, factor),
+  }));
+
+  const fuelCost = MOCK_FUEL_COST.map((d) => ({
+    ...d,
+    cost: scaleCurrency(d.cost, factor),
+  }));
+
+  const operationalCost = MOCK_OPERATIONAL_COST.map((d) => ({
+    ...d,
+    fuel: scaleCurrency(d.fuel, factor),
+    maintenance: scaleCurrency(d.maintenance, factor),
+  }));
+
+  let vehicleStatusDistribution;
+  if (filters.status && filters.status !== "all") {
+    const label = STATUS_VALUE_TO_LABEL[filters.status];
+    const base = MOCK_VEHICLE_STATUS.find((s) => s.status === label);
+    vehicleStatusDistribution = base
+      ? [{ status: base.status, count: scaleCount(base.count, factor) }]
+      : [];
+  } else {
+    vehicleStatusDistribution = MOCK_VEHICLE_STATUS.map((d) => ({
       ...d,
-      trips: scaleCount(d.trips, factor),
+      count: scaleCount(d.count, factor),
     }));
-
-    const fuelCost = MOCK_FUEL_COST.map((d) => ({
-      ...d,
-      cost: scaleCurrency(d.cost, factor),
-    }));
-
-    const operationalCost = MOCK_OPERATIONAL_COST.map((d) => ({
-      ...d,
-      fuel: scaleCurrency(d.fuel, factor),
-      maintenance: scaleCurrency(d.maintenance, factor),
-    }));
-
-    let vehicleStatusDistribution;
-    if (filters.status && filters.status !== "all") {
-      const label = STATUS_VALUE_TO_LABEL[filters.status];
-      const base = MOCK_VEHICLE_STATUS.find((s) => s.status === label);
-      vehicleStatusDistribution = base
-        ? [{ status: base.status, count: scaleCount(base.count, factor) }]
-        : [];
-    } else {
-      vehicleStatusDistribution = MOCK_VEHICLE_STATUS.map((d) => ({
-        ...d,
-        count: scaleCount(d.count, factor),
-      }));
-    }
-
-    return {
-      tripsOverTime,
-      fuelCost,
-      vehicleStatusDistribution,
-      operationalCost,
-    };
   }
-  const { data } = await api.get("/dashboard/charts", { params: filters });
-  return data;
+
+  return {
+    tripsOverTime,
+    fuelCost,
+    vehicleStatusDistribution,
+    operationalCost,
+  };
 }
 
 export default { getKpis, getCharts };
